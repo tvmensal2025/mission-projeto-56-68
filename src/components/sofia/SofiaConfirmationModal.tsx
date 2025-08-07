@@ -18,7 +18,7 @@ interface SofiaConfirmationModalProps {
   isOpen: boolean;
   onClose: () => void;
   analysisId: string;
-  detectedFoods: string[];
+  detectedFoods: string[] | Array<{nome: string, quantidade: number}>;
   userName: string;
   userId: string;
   onConfirmation: (response: string, calories?: number) => void;
@@ -34,13 +34,24 @@ const SofiaConfirmationModal: React.FC<SofiaConfirmationModalProps> = ({
   onConfirmation
 }) => {
   const [isCorrect, setIsCorrect] = useState<boolean | null>(null);
-  const [foodItems, setFoodItems] = useState<FoodItem[]>(
-    detectedFoods.map(food => ({
-      name: food,
-      quantity: getEstimatedQuantity(food),
-      unit: getUnit(food)
-    }))
-  );
+  const [foodItems, setFoodItems] = useState<FoodItem[]>(() => {
+    return detectedFoods.map(food => {
+      // Se é um objeto com nome e quantidade, usar os dados dele
+      if (typeof food === 'object' && 'nome' in food && 'quantidade' in food) {
+        return {
+          name: food.nome,
+          quantity: food.quantidade,
+          unit: getUnit(food.nome)
+        };
+      }
+      // Se é uma string simples, usar as estimativas antigas
+      return {
+        name: food as string,
+        quantity: getEstimatedQuantity(food as string),
+        unit: getUnit(food as string)
+      };
+    });
+  });
   const [newFood, setNewFood] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
