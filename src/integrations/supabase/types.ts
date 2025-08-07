@@ -2321,6 +2321,117 @@ export type Database = {
         }
         Relationships: []
       }
+      professional_evaluations: {
+        Row: {
+          abdominal_circumference_cm: number
+          bmi: number | null
+          bmr_kcal: number | null
+          body_fat_percentage: number | null
+          created_at: string | null
+          evaluation_date: string
+          extracellular_water_liters: number | null
+          extracellular_water_percent: number | null
+          fat_mass_kg: number | null
+          hip_circumference_cm: number
+          hydration_index: number | null
+          id: string
+          intracellular_water_liters: number | null
+          intracellular_water_percent: number | null
+          lean_mass_kg: number | null
+          metabolic_age: number | null
+          muscle_mass_kg: number | null
+          muscle_to_fat_ratio: number | null
+          notes: string | null
+          phase_angle: number | null
+          risk_level: string | null
+          skinfold_abdomen_mm: number | null
+          skinfold_chest_mm: number | null
+          skinfold_suprailiac_mm: number | null
+          skinfold_thigh_mm: number | null
+          skinfold_triceps_mm: number | null
+          total_body_water_liters: number | null
+          total_body_water_percent: number | null
+          updated_at: string | null
+          user_id: string
+          waist_circumference_cm: number
+          waist_to_height_ratio: number | null
+          waist_to_hip_ratio: number | null
+          weight_kg: number
+        }
+        Insert: {
+          abdominal_circumference_cm: number
+          bmi?: number | null
+          bmr_kcal?: number | null
+          body_fat_percentage?: number | null
+          created_at?: string | null
+          evaluation_date?: string
+          extracellular_water_liters?: number | null
+          extracellular_water_percent?: number | null
+          fat_mass_kg?: number | null
+          hip_circumference_cm: number
+          hydration_index?: number | null
+          id?: string
+          intracellular_water_liters?: number | null
+          intracellular_water_percent?: number | null
+          lean_mass_kg?: number | null
+          metabolic_age?: number | null
+          muscle_mass_kg?: number | null
+          muscle_to_fat_ratio?: number | null
+          notes?: string | null
+          phase_angle?: number | null
+          risk_level?: string | null
+          skinfold_abdomen_mm?: number | null
+          skinfold_chest_mm?: number | null
+          skinfold_suprailiac_mm?: number | null
+          skinfold_thigh_mm?: number | null
+          skinfold_triceps_mm?: number | null
+          total_body_water_liters?: number | null
+          total_body_water_percent?: number | null
+          updated_at?: string | null
+          user_id: string
+          waist_circumference_cm: number
+          waist_to_height_ratio?: number | null
+          waist_to_hip_ratio?: number | null
+          weight_kg: number
+        }
+        Update: {
+          abdominal_circumference_cm?: number
+          bmi?: number | null
+          bmr_kcal?: number | null
+          body_fat_percentage?: number | null
+          created_at?: string | null
+          evaluation_date?: string
+          extracellular_water_liters?: number | null
+          extracellular_water_percent?: number | null
+          fat_mass_kg?: number | null
+          hip_circumference_cm?: number
+          hydration_index?: number | null
+          id?: string
+          intracellular_water_liters?: number | null
+          intracellular_water_percent?: number | null
+          lean_mass_kg?: number | null
+          metabolic_age?: number | null
+          muscle_mass_kg?: number | null
+          muscle_to_fat_ratio?: number | null
+          notes?: string | null
+          phase_angle?: number | null
+          risk_level?: string | null
+          skinfold_abdomen_mm?: number | null
+          skinfold_chest_mm?: number | null
+          skinfold_suprailiac_mm?: number | null
+          skinfold_thigh_mm?: number | null
+          skinfold_triceps_mm?: number | null
+          total_body_water_liters?: number | null
+          total_body_water_percent?: number | null
+          updated_at?: string | null
+          user_id?: string
+          waist_circumference_cm?: number
+          waist_to_height_ratio?: number | null
+          waist_to_hip_ratio?: number | null
+          weight_kg?: number
+        }
+        Relationships: []
+      }
       profiles: {
         Row: {
           activity_level: string | null
