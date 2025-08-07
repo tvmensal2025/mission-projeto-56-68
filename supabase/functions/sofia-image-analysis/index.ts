@@ -23,6 +23,139 @@ async function fetchImageAsBase64(url: string): Promise<string> {
   }
 }
 
+// 🍽️ Base de conhecimento de porções brasileiras realistas
+const PORCOES_BRASILEIRAS: Record<string, number> = {
+  // Proteínas
+  'frango grelhado': 150,
+  'frango à parmegiana': 180,
+  'frango assado': 150,
+  'carne bovina': 150,
+  'carne assada': 150,
+  'carne grelhada': 150,
+  'peixe': 120,
+  'salmão': 120,
+  'atum': 100,
+  'ovo': 50,
+  'ovos': 100,
+  
+  // Carboidratos
+  'arroz branco': 100,
+  'arroz integral': 100,
+  'arroz': 100,
+  'batata frita': 80,
+  'batata': 150,
+  'batata assada': 150,
+  'purê de batata': 120,
+  'macarrão': 100,
+  'massa': 100,
+  'pão': 50,
+  'pão francês': 50,
+  'farofa': 60,
+  'feijão': 80,
+  'feijão preto': 80,
+  'feijão carioca': 80,
+  
+  // Vegetais e saladas
+  'salada': 50,
+  'alface': 30,
+  'tomate': 60,
+  'cenoura': 50,
+  'brócolis': 80,
+  'couve-flor': 80,
+  'abobrinha': 70,
+  'pepino': 40,
+  'cebola': 30,
+  'pimentão': 40,
+  
+  // Molhos e temperos
+  'molho de tomate': 40,
+  'molho': 40,
+  'vinagrete': 30,
+  'azeite': 15,
+  'óleo': 15,
+  'manteiga': 10,
+  'queijo': 25,
+  'queijo derretido': 25,
+  'queijo ralado': 20,
+  'requeijão': 30,
+  
+  // Bebidas (ml)
+  'suco': 200,
+  'suco de laranja': 200,
+  'refrigerante': 350,
+  'água': 250,
+  'café': 150,
+  'leite': 200,
+  'vitamina': 250,
+  
+  // Outros
+  'ervas': 3,
+  'temperos': 5,
+  'açúcar': 10,
+  'sal': 2
+};
+
+// 🔧 Função para remover duplicatas e aplicar estimativas realistas
+function removeDuplicatesAndEstimatePortions(foods: string[]): Array<{nome: string, quantidade: number}> {
+  const normalizedFoods = new Map<string, number>();
+  
+  foods.forEach(food => {
+    const normalizedFood = food.toLowerCase().trim();
+    
+    // Mapear variações para nomes padronizados
+    let standardName = normalizedFood;
+    
+    // Encontrar porção correspondente (busca por palavras-chave)
+    let portion = 0;
+    for (const [key, value] of Object.entries(PORCOES_BRASILEIRAS)) {
+      if (normalizedFood.includes(key.toLowerCase()) || key.toLowerCase().includes(normalizedFood)) {
+        standardName = key;
+        portion = value;
+        break;
+      }
+    }
+    
+    // Se não encontrou, usar estimativa genérica baseada no tipo
+    if (portion === 0) {
+      if (normalizedFood.includes('carne') || normalizedFood.includes('frango') || normalizedFood.includes('peixe')) {
+        portion = 150; // Proteínas
+      } else if (normalizedFood.includes('arroz') || normalizedFood.includes('batata') || normalizedFood.includes('massa')) {
+        portion = 100; // Carboidratos
+      } else if (normalizedFood.includes('salada') || normalizedFood.includes('verdura') || normalizedFood.includes('legume')) {
+        portion = 50; // Vegetais
+      } else if (normalizedFood.includes('molho') || normalizedFood.includes('tempero')) {
+        portion = 30; // Molhos/temperos
+      } else if (normalizedFood.includes('suco') || normalizedFood.includes('bebida')) {
+        portion = 200; // Bebidas
+      } else {
+        portion = 50; // Padrão genérico
+      }
+    }
+    
+    // Verificar se já existe um item similar (evitar duplicatas)
+    let existingKey = null;
+    for (const existingName of normalizedFoods.keys()) {
+      if (existingName.includes(standardName) || standardName.includes(existingName)) {
+        existingKey = existingName;
+        break;
+      }
+    }
+    
+    if (existingKey) {
+      // Combinar quantidades se for o mesmo alimento
+      normalizedFoods.set(existingKey, Math.max(normalizedFoods.get(existingKey)!, portion));
+    } else {
+      normalizedFoods.set(standardName, portion);
+    }
+  });
+  
+  // Converter para array de objetos com nome e quantidade
+  return Array.from(normalizedFoods.entries()).map(([nome, quantidade]) => ({
+    nome: nome.charAt(0).toUpperCase() + nome.slice(1), // Capitalizar primeira letra
+    quantidade
+  }));
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -229,8 +362,8 @@ Seja minucioso e identifique até pequenos detalhes como molhos, temperos e guar
                 ...(detailedAnalysis.seasonings || [])
               ];
 
-              // Remover duplicatas e normalizar
-              detectedFoods = [...new Set(allFoods.filter(item => item && item.length > 0))];
+              // 🔧 CORRIGIR DUPLICATAS E APLICAR ESTIMATIVAS REALISTAS
+              detectedFoods = removeDuplicatesAndEstimatePortions(allFoods.filter(item => item && item.length > 0));
               
               // Usar estimativa mais alta (mais conservadora)
               estimatedCalories = Math.max(estimatedCalories, detailedAnalysis.estimated_calories || 0);
@@ -253,6 +386,10 @@ Seja minucioso e identifique até pequenos detalhes como molhos, temperos e guar
         }
       } else if (!openAIApiKey) {
         console.log('⚠️ OpenAI API key não configurada, usando apenas Google AI');
+        
+        // Aplicar remoção de duplicatas mesmo só com Google AI
+        const allFoods = [...detectedFoods, ...detectedLiquids];
+        detectedFoods = removeDuplicatesAndEstimatePortions(allFoods.filter(item => item && item.length > 0));
       }
 
     } catch (error) {
@@ -286,18 +423,15 @@ Ou você pode me contar o que está comendo! 😉✨`,
 
     console.log('✅ Comida detectada! Gerando análise nutricional...');
 
-    // Gerar resposta de confirmação OBRIGATÓRIA usando função SQL
-    const { data: confirmationMessage } = await supabase
-      .rpc('format_sofia_food_response', {
-        detected_foods: detectedFoods,
-        user_name: actualUserName,
-        estimated_calories: estimatedCalories
-      });
+    // 🍽️ Formatar lista de alimentos com quantidades realistas
+    const foodList = Array.isArray(detectedFoods) && detectedFoods.length > 0 && typeof detectedFoods[0] === 'object'
+      ? detectedFoods.map(food => `• ${food.nome} – ${food.quantidade}g`).join('\n')
+      : detectedFoods.map(food => `• ${food}`).join('\n');
 
-    const finalMessage = confirmationMessage || `Oi ${actualUserName}! 😊 
+    const finalMessage = `Oi ${actualUserName}! 😊 
 
 📸 Analisei sua refeição e identifiquei:
-${detectedFoods.map(food => `• ${food}`).join('\n')}
+${foodList}
 
 🤔 Esses alimentos estão corretos?`;
 
@@ -306,11 +440,16 @@ ${detectedFoods.map(food => `• ${food}`).join('\n')}
     
     // Só salvar se não for usuário guest
     if (userId && userId !== 'guest') {
+      // 📝 Extrair apenas os nomes dos alimentos para o banco (compatibilidade)
+      const foodNames = Array.isArray(detectedFoods) && detectedFoods.length > 0 && typeof detectedFoods[0] === 'object'
+        ? detectedFoods.map(food => food.nome)
+        : detectedFoods;
+
       const analysisRecord = {
         user_id: userId,
         user_name: actualUserName,
         image_url: imageUrl,
-        foods_detected: detectedFoods,
+        foods_detected: foodNames,
         total_calories: estimatedCalories,
         sofia_analysis: finalMessage,
         confirmed_by_user: false,
