@@ -136,9 +136,8 @@ export const useProfessionalEvaluation = () => {
     try {
       setLoading(true);
       
-      // Since professional_evaluations table doesn't exist, return empty array
-      console.log('Professional evaluations table not available, returning empty array');
-      setEvaluations([]);
+      // Since professional_evaluations table doesn't exist, keep current local state
+      console.log('Professional evaluations table not available, keeping local state');
     } catch (err) {
       console.error('Erro ao carregar avaliações:', err);
       setError('Erro ao carregar avaliações');
@@ -156,9 +155,9 @@ export const useProfessionalEvaluation = () => {
       if (!userData.user) throw new Error('Usuário não autenticado');
 
       // Since professional_evaluations table doesn't exist, just return a mock result
-      console.log('Professional evaluations table not available, returning mock result');
-      const mockResult = { id: 'mock-id', ...evaluation };
-      
+      console.log('Professional evaluations table not available, storing mock locally');
+      const mockResult: ProfessionalEvaluation = { id: `mock-${Date.now()}`, ...evaluation } as any;
+      setEvaluations(prev => [mockResult, ...prev]);
       return mockResult;
     } catch (err) {
       console.error('Erro ao salvar avaliação:', err);

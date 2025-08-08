@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -14,6 +14,8 @@ import {
   CheckCircle
 } from 'lucide-react';
 import { motion } from 'framer-motion';
+import { supabase } from '@/integrations/supabase/client';
+import { useToast } from '@/hooks/use-toast';
 
 interface Template {
   id: string;
@@ -30,6 +32,8 @@ interface Template {
 
 const SessionTemplates: React.FC = () => {
   const [selectedTemplate, setSelectedTemplate] = useState<string | null>(null);
+  const [isCreating, setIsCreating] = useState<string | null>(null);
+  const { toast } = useToast();
 
   const templates: Template[] = [
     {
@@ -78,14 +82,250 @@ const SessionTemplates: React.FC = () => {
     }
   ];
 
-  const handleUseTemplate = (templateId: string) => {
-    setSelectedTemplate(templateId);
-    // Implementar lógica para usar o template
+  const buildSessionPayload = useMemo(() => {
+    return (templateId: string) => {
+      switch (templateId) {
+        case '12-areas': {
+          const emojiOptions = [
+            { value: 1, emoji: '😟', label: 'Muito baixa' },
+            { value: 2, emoji: '😕', label: 'Baixa' },
+            { value: 3, emoji: '😐', label: 'Média' },
+            { value: 4, emoji: '🙂', label: 'Boa' },
+            { value: 5, emoji: '😄', label: 'Excelente' },
+          ];
+
+          const areas = [
+            { id: 'saude', name: 'Saúde', icon: '🏥', color: '#0ea5e9' },
+            { id: 'familia', name: 'Família', icon: '👨‍👩‍👧‍👦', color: '#22c55e' },
+            { id: 'carreira', name: 'Carreira', icon: '💼', color: '#6366f1' },
+            { id: 'financas', name: 'Finanças', icon: '💰', color: '#f59e0b' },
+            { id: 'relacionamentos', name: 'Relacionamentos', icon: '🤝', color: '#ec4899' },
+            { id: 'diversao', name: 'Diversão', icon: '🎉', color: '#a78bfa' },
+            { id: 'crescimento', name: 'Crescimento', icon: '📈', color: '#10b981' },
+            { id: 'espiritual', name: 'Espiritual', icon: '🧘‍♀️', color: '#14b8a6' },
+            { id: 'ambiente', name: 'Ambiente', icon: '🏡', color: '#84cc16' },
+            { id: 'proposito', name: 'Propósito', icon: '🎯', color: '#ef4444' },
+            { id: 'contribuicao', name: 'Contribuição', icon: '🙌', color: '#06b6d4' },
+            { id: 'autoconhecimento', name: 'Autoconhecimento', icon: '🧠', color: '#8b5cf6' },
+          ].map((area) => ({
+            ...area,
+            question: {
+              id: `${area.id}_q1`,
+              text: `Como você avalia sua área de ${area.name} hoje?`,
+              type: 'emoji_scale',
+            },
+            emoji_options: emojiOptions,
+          }));
+
+          return {
+            title: 'Avaliação das 12 Áreas da Vida',
+            description: 'Avaliação do equilíbrio nas 12 áreas fundamentais com perguntas e visual final em roda.',
+            type: 'life_wheel_assessment',
+            content: { areas },
+            target_saboteurs: [],
+            difficulty: 'beginner',
+            estimated_time: 15,
+            tools_data: {}
+          } as const;
+        }
+        case '147-perguntas':
+          return {
+            title: 'Mapeamento de Sintomas (147 Perguntas)',
+            description: 'Questionário adaptativo de sintomas com frequência e intensidade em 12 sistemas.',
+            type: 'symptoms_assessment',
+            content: {
+              systems: [
+                { system: 'Digestivo', icon: '🍽️', color: '#f59e0b', questions: ['Sente azia?', 'Inchaço frequente?', 'Refluxo?'] },
+                { system: 'Respiratório', icon: '🫁', color: '#60a5fa', questions: ['Falta de ar?', 'Tosse frequente?', 'Chiado no peito?'] },
+                { system: 'Cardiovascular', icon: '❤️', color: '#ef4444', questions: ['Palpitações?', 'Pressão alta?', 'Cansaço fácil?'] },
+                { system: 'Neurológico', icon: '🧠', color: '#a78bfa', questions: ['Dores de cabeça?', 'Tonturas?', 'Insônia?'] },
+                { system: 'Musculoesquelético', icon: '💪', color: '#22c55e', questions: ['Dores musculares?', 'Rigidez?', 'Cãibras?'] },
+                { system: 'Imunológico', icon: '🛡️', color: '#10b981', questions: ['Infecções recorrentes?', 'Alergias?', 'Cansaço prolongado?'] },
+              ]
+            },
+            target_saboteurs: [],
+            difficulty: 'intermediate',
+            estimated_time: 15,
+            tools_data: {}
+          } as const;
+        case '8-pilares':
+          return {
+            title: '8 Pilares Financeiros',
+            description: 'Avaliação dos 8 pilares da prosperidade com pergunta por pilar e visual em roda.',
+            type: 'life_wheel_assessment',
+            content: {
+              areas: [
+                { id: 'mindset', name: 'Mindset', icon: '🧭', color: '#8b5cf6' },
+                { id: 'planejamento', name: 'Planejamento', icon: '🗂️', color: '#0ea5e9' },
+                { id: 'investimentos', name: 'Investimentos', icon: '📈', color: '#22c55e' },
+                { id: 'renda', name: 'Renda', icon: '💼', color: '#f59e0b' },
+                { id: 'gastos', name: 'Gastos', icon: '🧾', color: '#ef4444' },
+                { id: 'protecao', name: 'Proteção', icon: '🛡️', color: '#10b981' },
+                { id: 'impostos', name: 'Impostos', icon: '🏛️', color: '#06b6d4' },
+                { id: 'reserva', name: 'Reserva', icon: '🏦', color: '#84cc16' },
+              ].map((area) => ({
+                ...area,
+                question: { id: `${area.id}_q1`, text: `Como está seu pilar de ${area.name}?`, type: 'emoji_scale' },
+                emoji_options: [
+                  { value: 1, emoji: '😟', label: 'Muito baixa' },
+                  { value: 2, emoji: '😕', label: 'Baixa' },
+                  { value: 3, emoji: '😐', label: 'Média' },
+                  { value: 4, emoji: '🙂', label: 'Boa' },
+                  { value: 5, emoji: '😄', label: 'Excelente' },
+                ]
+              }))
+            },
+            target_saboteurs: [],
+            difficulty: 'beginner',
+            estimated_time: 15,
+            tools_data: {}
+          } as const;
+        case '8-competencias':
+          return {
+            title: 'Roda das 8 Competências',
+            description: 'Avaliação de competências profissionais com pergunta por competência e visual final em roda.',
+            type: 'life_wheel_assessment',
+            content: {
+              areas: [
+                { id: 'lideranca', name: 'Liderança', icon: '👑', color: '#f59e0b' },
+                { id: 'comunicacao', name: 'Comunicação', icon: '💬', color: '#22c55e' },
+                { id: 'inovacao', name: 'Inovação', icon: '💡', color: '#a78bfa' },
+                { id: 'estrategia', name: 'Estratégia', icon: '🎯', color: '#ef4444' },
+                { id: 'execucao', name: 'Execução', icon: '🏃‍♂️', color: '#0ea5e9' },
+                { id: 'relacionamento', name: 'Relacionamento', icon: '🤝', color: '#ec4899' },
+                { id: 'adaptabilidade', name: 'Adaptabilidade', icon: '🔄', color: '#06b6d4' },
+                { id: 'aprendizado', name: 'Aprendizado', icon: '📚', color: '#84cc16' },
+              ].map((area) => ({
+                ...area,
+                question: { id: `${area.id}_q1`, text: `Como você avalia sua competência de ${area.name}?`, type: 'emoji_scale' },
+                emoji_options: [
+                  { value: 1, emoji: '😟', label: 'Muito baixa' },
+                  { value: 2, emoji: '😕', label: 'Baixa' },
+                  { value: 3, emoji: '😐', label: 'Média' },
+                  { value: 4, emoji: '🙂', label: 'Boa' },
+                  { value: 5, emoji: '😄', label: 'Excelente' },
+                ]
+              }))
+            },
+            target_saboteurs: [],
+            difficulty: 'beginner',
+            estimated_time: 12,
+            tools_data: {}
+          } as const;
+        default:
+          return null;
+      }
+    };
+  }, []);
+
+  const createSessionAndAssignToCurrentUser = async (templateId: string) => {
+    try {
+      setIsCreating(templateId);
+      setSelectedTemplate(templateId);
+
+      const { data: auth } = await supabase.auth.getUser();
+      const currentUser = auth?.user;
+      if (!currentUser) {
+        toast({ title: 'Autenticação necessária', description: 'Faça login para criar a sessão.', variant: 'destructive' });
+        return;
+      }
+
+      const payload = buildSessionPayload(templateId);
+      if (!payload) {
+        toast({ title: 'Template inválido', description: 'Template não encontrado.', variant: 'destructive' });
+        return;
+      }
+
+      const sessionInsert = {
+        ...payload,
+        created_by: currentUser.id,
+        is_active: true
+      } as any;
+
+      const { data: createdSession, error: createError } = await supabase
+        .from('sessions')
+        .insert(sessionInsert)
+        .select()
+        .single();
+
+      if (createError) {
+        throw createError;
+      }
+
+      const assignment = {
+        user_id: currentUser.id,
+        session_id: createdSession.id,
+        status: 'pending',
+        progress: 0,
+        assigned_at: new Date().toISOString()
+      };
+
+      const { error: assignError } = await supabase
+        .from('user_sessions')
+        .upsert([assignment], { onConflict: 'user_id,session_id' });
+
+      if (assignError) {
+        throw assignError;
+      }
+
+      toast({ title: 'Sessão criada!', description: 'Template aplicado e sessão atribuída a você.' });
+    } catch (error: any) {
+      console.error('Erro ao usar template:', error);
+      toast({ title: 'Erro ao criar sessão', description: error?.message || 'Tente novamente.', variant: 'destructive' });
+    } finally {
+      setIsCreating(null);
+    }
   };
 
-  const handleSendToAll = (templateId: string) => {
-    // Implementar lógica para enviar para todos os usuários
-    console.log('Enviando template para todos os usuários:', templateId);
+  const handleUseTemplate = (templateId: string) => {
+    void createSessionAndAssignToCurrentUser(templateId);
+  };
+
+  const handleSendToAll = async (templateId: string) => {
+    try {
+      setIsCreating(templateId);
+
+      // 1) Criar a sessão a partir do template
+      const { data: auth } = await supabase.auth.getUser();
+      const currentUser = auth?.user;
+      if (!currentUser) {
+        toast({ title: 'Autenticação necessária', description: 'Faça login como admin.', variant: 'destructive' });
+        return;
+      }
+      const payload = buildSessionPayload(templateId);
+      if (!payload) return;
+
+      const { data: createdSession, error: createError } = await supabase
+        .from('sessions')
+        .insert({ ...payload, created_by: currentUser.id, is_active: true })
+        .select()
+        .single();
+      if (createError) throw createError;
+
+      // 2) Tentar usar a função RPC (se existir) para atribuição em massa
+      const { error: rpcError } = await supabase.rpc('assign_session_to_users', {
+        session_id_param: createdSession.id,
+        user_ids_param: null,
+        admin_user_id: currentUser.id
+      });
+
+      if (rpcError) {
+        // Fallback: apenas informa que é necessário configurar função/credenciais
+        console.warn('RPC assign_session_to_users falhou:', rpcError);
+        toast({
+          title: 'Sessão criada',
+          description: 'Para enviar a todos, habilite a função assign_session_to_users no banco.',
+        });
+        return;
+      }
+
+      toast({ title: 'Sessão enviada!', description: 'Template aplicado e enviado para todos os usuários.' });
+    } catch (error: any) {
+      console.error('Erro ao enviar para todos:', error);
+      toast({ title: 'Erro ao enviar', description: error?.message || 'Tente novamente.', variant: 'destructive' });
+    } finally {
+      setIsCreating(null);
+    }
   };
 
   return (
@@ -136,17 +376,19 @@ const SessionTemplates: React.FC = () => {
                     <Button 
                       onClick={() => handleUseTemplate(template.id)}
                       className="bg-primary hover:bg-primary/90 text-primary-foreground"
+                      disabled={isCreating === template.id}
                     >
                       <Zap className="w-4 h-4 mr-2" />
-                      Usar Template
+                      {isCreating === template.id ? 'Criando...' : 'Usar Template'}
                     </Button>
                     <Button 
                       onClick={() => handleSendToAll(template.id)}
                       variant="outline"
                       className="border-primary text-primary hover:bg-primary hover:text-primary-foreground"
+                      disabled={isCreating === template.id}
                     >
                       <Send className="w-4 h-4 mr-2" />
-                      Enviar p/ Todos
+                      {isCreating === template.id ? 'Enviando...' : 'Enviar p/ Todos'}
                     </Button>
                   </div>
                 </div>

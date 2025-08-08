@@ -286,6 +286,11 @@ const rankingExemplo: RankingUser[] = [{
 const DesafiosSection: React.FC<DesafiosSectionProps> = ({
   user
 }) => {
+  // Validador simples de UUID (v1–v5)
+  const isValidUUID = (value: string | undefined | null): boolean => {
+    if (!value || typeof value !== 'string') return false;
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+  };
   const [selectedDesafio, setSelectedDesafio] = useState<Desafio | null>(null);
   const [showModal, setShowModal] = useState(false);
   const [desafios, setDesafios] = useState<Desafio[]>([]);
@@ -301,37 +306,104 @@ const DesafiosSection: React.FC<DesafiosSectionProps> = ({
     triggerCelebration
   } = useCelebrationEffects();
 
+  // Mapeia categorias de exibição para categorias válidas no banco
+  const mapCategoryToDb = (label: string | undefined | null): string => {
+    const normalized = (label || '').toLowerCase();
+    if (normalized.includes('hidrata')) return 'hidratacao';
+    if (normalized.includes('atividade') || normalized.includes('exerc')) return 'exercicio';
+    if (normalized.includes('mente') || normalized.includes('medita') || normalized.includes('mind')) return 'mindfulness';
+    if (normalized.includes('nutri')) return 'nutricao';
+    if (normalized.includes('sono')) return 'sono';
+    if (normalized.includes('medi') && !normalized.includes('medita')) return 'medicao';
+    return 'especial';
+  };
+
+  // Garante que um desafio de demonstração exista no banco e retorna o UUID real
+  // Se não puder criar no banco (RLS/403), retorna null para operar localmente
+  const ensureRealChallenge = async (desafio: Desafio): Promise<string | null> => {
+    if (isValidUUID(desafio.id)) return desafio.id;
+
+    // Inserir desafio real no banco baseado nos dados do card
+    const insertPayload = {
+      title: desafio.title,
+      description: desafio.description,
+      category: mapCategoryToDb(desafio.category),
+      difficulty: desafio.difficulty,
+      duration_days: desafio.duration_days,
+      points_reward: desafio.points_reward,
+      badge_icon: desafio.badge_icon,
+      badge_name: desafio.badge_name,
+      instructions: desafio.instructions,
+      tips: desafio.tips,
+      is_active: true,
+      is_featured: !!desafio.is_featured,
+      is_group_challenge: !!desafio.is_group_challenge,
+      daily_log_target: desafio.daily_log_target,
+      daily_log_unit: desafio.daily_log_unit
+    } as const;
+
+    const { data: created, error: insertError } = await supabase
+      .from('challenges')
+      .insert(insertPayload)
+      .select()
+      .single();
+
+    if (insertError || !created?.id) {
+      const message = String((insertError as any)?.message || '').toLowerCase();
+      const code = (insertError as any)?.code;
+      const status = (insertError as any)?.status;
+      const rlsBlocked = code === '42501' || status === 403 || message.includes('row-level security') || message.includes('forbidden');
+      console.warn('Falha ao criar desafio real no banco:', insertError);
+      if (rlsBlocked) return null;
+      throw new Error('Não foi possível criar o desafio real.');
+    }
+
+    const newId = created.id as string;
+
+    // Atualizar arrays locais substituindo o id antigo pelo novo
+    setDesafios(prev => prev.map(d => d.id === desafio.id ? { ...d, id: newId } : d));
+    setDesafiosPublicos(prev => prev.map(d => d.id === desafio.id ? { ...d, id: newId } : d));
+
+    return newId;
+  };
+
   // Função utilitária para obter ou criar participação
   const getOrCreateParticipation = async (challengeId: string) => {
     // Verificar se já existe participação
 
     // Verificar se já existe participação
-    const {
-      data: existingParticipation,
-      error: checkError
-    } = await supabase.from('challenge_participations').select('*').eq('user_id', user?.id).eq('challenge_id', challengeId).single();
-    if (checkError && checkError.code === 'PGRST116') {
-      // Participação não existe, criar uma nova
-      const {
-        data: newParticipation,
-        error: insertError
-      } = await supabase.from('challenge_participations').insert({
-        user_id: user?.id,
-        challenge_id: challengeId,
-        progress: 0,
-        is_completed: false,
-        started_at: new Date().toISOString()
-      }).select().single();
-      if (insertError) {
-        throw new Error('Erro ao criar participação: ' + insertError.message);
+      const { data: existingParticipation, error: checkError } = await supabase
+        .from('challenge_participations')
+        .select('*')
+        .eq('user_id', user?.id)
+        .eq('challenge_id', challengeId)
+        .maybeSingle();
+
+      if (checkError) {
+        throw new Error('Erro ao verificar participação: ' + checkError.message);
       }
-      return newParticipation;
-    } else if (checkError) {
-      throw new Error('Erro ao verificar participação: ' + checkError.message);
-    } else {
+
+      if (!existingParticipation) {
+        // Participação não existe, criar uma nova
+        const { data: newParticipation, error: insertError } = await supabase
+          .from('challenge_participations')
+          .insert({
+            user_id: user?.id,
+            challenge_id: challengeId,
+            progress: 0,
+            is_completed: false,
+            started_at: new Date().toISOString()
+          })
+          .select()
+          .single();
+        if (insertError) {
+          throw new Error('Erro ao criar participação: ' + insertError.message);
+        }
+        return newParticipation;
+      }
+
       // Participação já existe
       return existingParticipation;
-    }
   };
   useEffect(() => {
     if (user?.id && !dataLoaded) {
@@ -350,7 +422,7 @@ const DesafiosSection: React.FC<DesafiosSectionProps> = ({
         error: desafiosError
       } = await supabase.from('challenges').select(`
           *,
-          challenge_participations!inner(
+          challenge_participations(
             id,
             user_id,
             progress,
@@ -368,7 +440,7 @@ const DesafiosSection: React.FC<DesafiosSectionProps> = ({
         error: desafiosPublicosError
       } = await supabase.from('challenges').select(`
           *,
-          challenge_participations!inner(
+          challenge_participations(
             id,
             user_id,
             progress,
@@ -380,20 +452,41 @@ const DesafiosSection: React.FC<DesafiosSectionProps> = ({
         console.error('Erro ao carregar desafios públicos:', desafiosPublicosError);
       }
 
-      // 3. Carregar ranking de usuários (sem JOIN problemático)
+      // 3. Carregar ranking real de usuários (agrega participações por usuário)
       const {
-        data: rankingData,
+        data: participations,
         error: rankingError
       } = await supabase.from('challenge_participations').select(`
           user_id,
           progress,
           is_completed,
           challenges(points_reward)
-        `).eq('is_completed', true).order('progress', {
-        ascending: false
-      }).limit(10);
+        `);
       if (rankingError) {
         console.error('Erro ao carregar ranking:', rankingError);
+      }
+
+      // Agregar pontos por usuário com base no progresso (% * points_reward)
+      const pointsByUser = new Map<string, { totalPoints: number; completedCount: number }>();
+      (participations || []).forEach((p: any) => {
+        const reward = p?.challenges?.points_reward ?? 0;
+        const progress = typeof p?.progress === 'number' ? p.progress : 0; // 0..100
+        const earned = Math.round((progress / 100) * reward);
+        const current = pointsByUser.get(p.user_id) || { totalPoints: 0, completedCount: 0 };
+        current.totalPoints += Number.isFinite(earned) ? earned : 0;
+        if (p.is_completed) current.completedCount += 1;
+        pointsByUser.set(p.user_id, current);
+      });
+
+      // Buscar perfis para nomes/avatars somente dos usuários presentes no ranking
+      const rankingUserIds = Array.from(pointsByUser.keys());
+      let profilesMap = new Map<string, any>();
+      if (rankingUserIds.length > 0) {
+        const { data: profiles } = await supabase
+          .from('profiles')
+          .select('user_id, full_name, avatar_url')
+          .in('user_id', rankingUserIds);
+        (profiles || []).forEach((p) => profilesMap.set(p.user_id, p));
       }
 
       // Processar dados dos desafios individuais
@@ -458,16 +551,24 @@ const DesafiosSection: React.FC<DesafiosSectionProps> = ({
       }) || [];
 
       // Processar dados do ranking (sem profiles)
-      const rankingProcessado = rankingData?.map((item, index) => ({
-        id: item.user_id,
-        name: `Usuário ${item.user_id.slice(0, 8)}`,
-        avatar: '😊',
-        progress: item.progress,
-        points: item.challenges?.points_reward || 0,
-        position: index + 1,
-        badge: index < 3 ? ['👑', '🥈', '🥉'][index] : '⭐',
-        is_current_user: item.user_id === user?.id
-      })) || [];
+      // Transformar em lista ordenada por pontos
+      const rankingProcessado = rankingUserIds
+        .map((uid) => {
+          const profile = profilesMap.get(uid);
+          const stats = pointsByUser.get(uid)!;
+          return {
+            id: uid,
+            name: profile?.full_name || `Usuário ${uid.slice(0, 8)}`,
+            avatar: '😊',
+            progress: Math.min(100, Math.round(stats.totalPoints)), // apenas para a barra visual
+            points: stats.totalPoints,
+            position: 0,
+            badge: '⭐',
+            is_current_user: uid === user?.id
+          };
+        })
+        .sort((a, b) => b.points - a.points)
+        .map((u, index) => ({ ...u, position: index + 1, badge: index < 3 ? ['👑', '🥈', '🥉'][index] : '⭐' }));
 
       // Se não há dados reais, usar exemplos
       if (desafiosProcessados.length === 0) {
@@ -481,8 +582,7 @@ const DesafiosSection: React.FC<DesafiosSectionProps> = ({
         console.log(`✅ Carregados ${rankingProcessado.length} usuários no ranking`);
         setDesafios(desafiosProcessados);
         setDesafiosPublicos(desafiosPublicosProcessados);
-        // Usar ranking de exemplo se não há dados reais
-        setRankingData(rankingProcessado.length > 0 ? rankingProcessado : rankingExemplo);
+        setRankingData(rankingProcessado);
       }
     } catch (error) {
       console.error('Erro ao carregar desafios:', error);
@@ -502,14 +602,36 @@ const DesafiosSection: React.FC<DesafiosSectionProps> = ({
   };
   const handleDesafioClick = async (desafio: Desafio) => {
     try {
-      // Se não tem participação, verificar se existe no banco
-      if (!desafio.user_participation) {
+      // Garantir que o desafio exista com UUID no banco
+      const realChallengeId = await ensureRealChallenge(desafio);
+
+      // Se não for possível criar no banco (RLS), operar localmente
+      if (!realChallengeId) {
+        const localDesafio: Desafio = {
+          ...desafio,
+          user_participation: desafio.user_participation ?? {
+            id: 'local-temp',
+            progress: 0,
+            is_completed: false,
+            started_at: new Date().toISOString()
+          }
+        };
+        setSelectedDesafio(localDesafio);
+        setShowModal(true);
+        toast({ title: 'Modo demonstração', description: 'Sem permissão para criar no banco. Editando localmente.' });
+        return;
+      }
+
+      // Se não tem participação OU o ID é mock (não-UUID), criar/obter do banco
+      const hasValidParticipation = !!desafio.user_participation && isValidUUID(desafio.user_participation.id);
+      if (!desafio.user_participation || !hasValidParticipation) {
         try {
-          const participacao = await getOrCreateParticipation(desafio.id);
+          const participacao = await getOrCreateParticipation(realChallengeId);
 
           // Atualizar desafio com a participação
           const desafioComParticipacao = {
             ...desafio,
+            id: realChallengeId,
             user_participation: {
               id: participacao.id,
               progress: participacao.progress,
@@ -528,7 +650,7 @@ const DesafiosSection: React.FC<DesafiosSectionProps> = ({
           return;
         }
       } else {
-        setSelectedDesafio(desafio);
+        setSelectedDesafio({ ...desafio, id: realChallengeId });
       }
       setShowModal(true);
     } catch (error) {
@@ -543,24 +665,72 @@ const DesafiosSection: React.FC<DesafiosSectionProps> = ({
   const handleProgressUpdate = async (newProgress: number) => {
     if (selectedDesafio && selectedDesafio.user_participation) {
       try {
-        // Atualizar progresso no banco
+        // Se o desafio não possui UUID (modo local), apenas atualizar estado e encerrar
+        if (!isValidUUID(selectedDesafio.id)) {
+          setDesafios(prev => prev.map(desafio => desafio.id === selectedDesafio.id ? {
+            ...desafio,
+            user_participation: {
+              ...desafio.user_participation!,
+              progress: newProgress,
+              is_completed: newProgress >= desafio.daily_log_target
+            }
+          } : desafio));
+
+          setDesafiosPublicos(prev => prev.map(desafio => desafio.id === selectedDesafio.id ? {
+            ...desafio,
+            user_participation: desafio.user_participation ? {
+              ...desafio.user_participation,
+              progress: newProgress,
+              is_completed: newProgress >= desafio.daily_log_target
+            } : undefined
+          } : desafio));
+
+        if (newProgress >= selectedDesafio.daily_log_target) {
+          triggerCelebration('🎉 Desafio Completo! 🎉');
+          toast({ title: 'Parabéns! 🏆', description: `Você completou o desafio "${selectedDesafio.title}"! (local)` });
+        } else {
+          toast({ title: 'Progresso Atualizado! 📊', description: 'Seu progresso foi salvo localmente.' });
+        }
+        setShowModal(false);
+        return;
+      }
+        // Garantir um ID de participação válido; se for mock, criar/obter
+        let participationId = selectedDesafio.user_participation.id;
+        if (!isValidUUID(participationId)) {
+          const participacao = await getOrCreateParticipation(selectedDesafio.id);
+          participationId = participacao.id;
+          // Sincronizar no estado atual do modal/seleção
+          setSelectedDesafio(prev => prev ? ({
+            ...prev,
+            user_participation: {
+              ...prev.user_participation!,
+              id: participacao.id,
+              started_at: participacao.started_at
+            }
+          }) : prev);
+        }
 
         // Atualizar progresso no banco
-        const {
-          error
-        } = await supabase.from('challenge_participations').update({
-          progress: newProgress,
-          is_completed: newProgress >= selectedDesafio.daily_log_target,
-          updated_at: new Date().toISOString()
-        }).eq('id', selectedDesafio.user_participation.id);
+        const { error } = await supabase
+          .from('challenge_participations')
+          .update({
+            progress: newProgress,
+            is_completed: newProgress >= selectedDesafio.daily_log_target,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', participationId);
         if (error) {
           console.error('Erro ao atualizar progresso:', error);
-          toast({
-            title: "Erro",
-            description: "Não foi possível atualizar o progresso.",
-            variant: "destructive"
-          });
-          return;
+          // Se for erro de UUID (22P02) ou similar, aplicar fallback para estado local
+          const isUuidError = (error as any)?.code === '22P02' || String((error as any)?.message || '').toLowerCase().includes('invalid input syntax for type uuid');
+          if (!isUuidError) {
+            toast({
+              title: "Erro",
+              description: "Não foi possível atualizar o progresso.",
+              variant: "destructive"
+            });
+            return;
+          }
         }
 
         // Atualizar desafios individuais
@@ -609,11 +779,37 @@ const DesafiosSection: React.FC<DesafiosSectionProps> = ({
   };
   const handleStartIndividualChallenge = async (desafio: Desafio) => {
     try {
-      const participacao = await getOrCreateParticipation(desafio.id);
+      const realChallengeId = await ensureRealChallenge(desafio);
+      if (!realChallengeId) {
+        // Modo local: marcar participação mock e abrir modal
+        setDesafios(prev => prev.map(d => d.id === desafio.id ? {
+          ...d,
+          user_participation: {
+            id: 'local-temp',
+            progress: 0,
+            is_completed: false,
+            started_at: new Date().toISOString()
+          }
+        } : d));
+        toast({ title: 'Modo demonstração', description: 'Sem permissão para criar no banco. Registrando localmente.' });
+        setSelectedDesafio({
+          ...desafio,
+          user_participation: {
+            id: 'local-temp',
+            progress: 0,
+            is_completed: false,
+            started_at: new Date().toISOString()
+          }
+        });
+        setShowModal(true);
+        return;
+      }
+      const participacao = await getOrCreateParticipation(realChallengeId);
 
       // Atualizar estado local
       setDesafios(prev => prev.map(d => d.id === desafio.id ? {
         ...d,
+        id: realChallengeId,
         user_participation: {
           id: participacao.id,
           progress: 0,
@@ -629,6 +825,7 @@ const DesafiosSection: React.FC<DesafiosSectionProps> = ({
       // Abrir modal para atualizar progresso
       setSelectedDesafio({
         ...desafio,
+        id: realChallengeId,
         user_participation: {
           id: participacao.id,
           progress: 0,
@@ -648,11 +845,28 @@ const DesafiosSection: React.FC<DesafiosSectionProps> = ({
   };
   const handleJoinPublicChallenge = async (desafio: Desafio) => {
     try {
-      const participacao = await getOrCreateParticipation(desafio.id);
+      const realChallengeId = await ensureRealChallenge(desafio);
+      if (!realChallengeId) {
+        // Modo local: marcar participação mock
+        setDesafiosPublicos(prev => prev.map(d => d.id === desafio.id ? {
+          ...d,
+          user_participation: {
+            id: 'local-temp',
+            progress: 0,
+            is_completed: false,
+            started_at: new Date().toISOString()
+          },
+          participants_count: (d.participants_count || 0) + 1
+        } : d));
+        toast({ title: 'Modo demonstração', description: 'Sem permissão para criar no banco. Participação registrada localmente.' });
+        return;
+      }
+      const participacao = await getOrCreateParticipation(realChallengeId);
 
       // Atualizar estado local
       setDesafiosPublicos(prev => prev.map(d => d.id === desafio.id ? {
         ...d,
+        id: realChallengeId,
         user_participation: {
           id: participacao.id,
           progress: 0,

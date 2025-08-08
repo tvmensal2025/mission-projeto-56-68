@@ -84,7 +84,7 @@ serve(async (req) => {
       { data: goals },
       { data: anamnesis }
     ] = await Promise.all([
-      supabase.from('user_profiles').select('*').eq('user_id', userId).single(),
+      supabase.from('profiles').select('*').eq('user_id', userId).single(),
       supabase.from('weight_measurements').select('*').eq('user_id', userId).order('measurement_date', { ascending: false }).limit(5),
       supabase.from('health_diary').select('*').eq('user_id', userId).order('date', { ascending: false }).limit(7),
       supabase.from('user_goals').select('*').eq('user_id', userId),

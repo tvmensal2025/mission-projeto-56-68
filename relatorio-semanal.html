@@ -1,0 +1,406 @@
+
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Relatório Semanal de Saúde</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            margin: 0;
+            padding: 20px;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            text-align: center;
+            padding: 40px 20px;
+        }
+        .header h1 {
+            margin: 0;
+            font-size: 2.5em;
+            font-weight: 300;
+        }
+        .header p {
+            margin: 10px 0 0 0;
+            opacity: 0.9;
+            font-size: 1.1em;
+        }
+        .content {
+            padding: 40px;
+        }
+        .section {
+            margin-bottom: 40px;
+            padding: 30px;
+            background: #f8f9fa;
+            border-radius: 15px;
+            border-left: 5px solid #667eea;
+        }
+        .section h2 {
+            color: #667eea;
+            margin-top: 0;
+            font-size: 1.8em;
+            font-weight: 600;
+        }
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin-top: 20px;
+        }
+        .stat-card {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            text-align: center;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+        }
+        .stat-value {
+            font-size: 2em;
+            font-weight: bold;
+            color: #667eea;
+        }
+        .stat-label {
+            color: #666;
+            margin-top: 5px;
+        }
+        .stat-comparison {
+            color: #999;
+            font-size: 0.8em;
+            margin-top: 3px;
+        }
+        .achievement {
+            background: linear-gradient(135deg, #ffeaa7 0%, #fab1a0 100%);
+            color: #2d3436;
+            padding: 15px;
+            border-radius: 10px;
+            margin: 10px 0;
+            display: flex;
+            align-items: center;
+        }
+        .achievement-icon {
+            font-size: 1.5em;
+            margin-right: 15px;
+        }
+        .progress-bar {
+            background: #e9ecef;
+            border-radius: 10px;
+            height: 20px;
+            overflow: hidden;
+            margin: 10px 0;
+        }
+        .progress-fill {
+            background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+            height: 100%;
+            transition: width 0.3s ease;
+        }
+        .footer {
+            background: #2d3436;
+            color: white;
+            text-align: center;
+            padding: 30px;
+        }
+        .footer a {
+            color: #667eea;
+            text-decoration: none;
+        }
+        .trend-up { color: #00b894; }
+        .trend-down { color: #e17055; }
+        .trend-stable { color: #fdcb6e; }
+        
+        .chart-container {
+            position: relative;
+            height: 400px;
+            margin: 20px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🏥 Dr. Vita</h1>
+            <p>Relatório Semanal de Saúde para Sirlene Correa</p>
+            <p>quinta-feira, 7 de agosto de 2025</p>
+        </div>
+
+        <div class="content">
+
+            <!-- Análise Completa de Sua Evolução -->
+            
+            <div class="section">
+                <h2>📈 Análise Completa de Sua Evolução</h2>
+                
+                <!-- Resumo Principal -->
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <div class="stat-value">68.5kg</div>
+                        <div class="stat-label">Peso Atual</div>
+                        <div class="stat-comparison">vs 69.2kg</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value">25.1</div>
+                        <div class="stat-label">IMC</div>
+                        <div class="stat-comparison">vs 25.4</div>
+                    </div>
+                    
+                    <div class="stat-card">
+                        <div class="stat-value">25.5%</div>
+                        <div class="stat-label">Gordura Corporal</div>
+                        <div class="stat-comparison">vs 26.1%</div>
+                    </div>
+                    
+                    
+                    <div class="stat-card">
+                        <div class="stat-value">55.8%</div>
+                        <div class="stat-label">Água Corporal</div>
+                        <div class="stat-comparison">vs 55.2%</div>
+                    </div>
+                    
+                    
+                    <div class="stat-card">
+                        <div class="stat-value">42.3kg</div>
+                        <div class="stat-label">Massa Muscular</div>
+                        <div class="stat-comparison">vs 42.1kg</div>
+                    </div>
+                    
+                    
+                    <div class="stat-card">
+                        <div class="stat-value">2.8kg</div>
+                        <div class="stat-label">Massa Óssea</div>
+                        <div class="stat-comparison">vs 2.8kg</div>
+                    </div>
+                    
+                    
+                    <div class="stat-card">
+                        <div class="stat-value">1450</div>
+                        <div class="stat-label">Metabolismo Basal (kcal)</div>
+                        <div class="stat-comparison">vs 1445</div>
+                    </div>
+                    
+                    
+                    <div class="stat-card">
+                        <div class="stat-value">8</div>
+                        <div class="stat-label">Gordura Visceral</div>
+                        <div class="stat-comparison">vs 8</div>
+                    </div>
+                    
+                </div>
+                
+                <div class="progress-bar">
+                    <div class="progress-fill" style="width: 71.42857142857143%"></div>
+                </div>
+                <p>Medições realizadas: 5/7 dias</p>
+            </div>
+            
+
+            <!-- Hábitos de Saúde -->
+            
+            <div class="section">
+                <h2>🌟 Hábitos de Saúde</h2>
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <div class="stat-value">0.0L</div>
+                        <div class="stat-label">Água Média/Dia</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value">0.0h</div>
+                        <div class="stat-label">Sono Médio/Noite</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value">0min</div>
+                        <div class="stat-label">Exercício Médio/Dia</div>
+                    </div>
+                </div>
+            </div>
+            
+
+            <!-- Conquistas -->
+            
+            <div class="section">
+                <h2>🏆 Novas Conquistas</h2>
+                
+                    <div class="achievement">
+                        <div class="achievement-icon">🏆</div>
+                        <div>
+                            <strong>Primeira Semana</strong><br>
+                            <small>Completou 7 dias consecutivos</small>
+                        </div>
+                    </div>
+                
+                    <div class="achievement">
+                        <div class="achievement-icon">🏆</div>
+                        <div>
+                            <strong>Meta de Peso</strong><br>
+                            <small>Perdeu 3kg esta semana</small>
+                        </div>
+                    </div>
+                
+                    <div class="achievement">
+                        <div class="achievement-icon">🏆</div>
+                        <div>
+                            <strong>Hidratação Perfeita</strong><br>
+                            <small>Manteve hidratação acima de 55%</small>
+                        </div>
+                    </div>
+                
+                    <div class="achievement">
+                        <div class="achievement-icon">🏆</div>
+                        <div>
+                            <strong>Massa Muscular</strong><br>
+                            <small>Ganhou 1.1kg de massa muscular</small>
+                        </div>
+                    </div>
+                
+            </div>
+            
+
+            <!-- Exames Analisados -->
+            
+
+            <!-- Análise IA -->
+            
+            <div class="section">
+                <h2>🤖 Análise Inteligente</h2>
+                <p><strong>Tendência:</strong> undefined</p>
+                
+            </div>
+            
+
+            <!-- Mensagem da Sof.ia -->
+            <div class="section" style="background: linear-gradient(135deg, #ffeaa7 0%, #fab1a0 100%); border-left: 5px solid #e17055;">
+                <div style="display: flex; align-items: center; margin-bottom: 20px;">
+                    <img src="https://hlrkoyywjpckdotimtik.supabase.co/storage/v1/object/public/course-thumbnails/Sofia%20sem%20fundo.png" 
+                         alt="Sofia" 
+                         style="width: 80px; height: 80px; border-radius: 50%; margin-right: 20px; object-fit: cover;">
+                    <h2 style="color: #2d3436; margin: 0;">💝 Mensagem da Sof.ia</h2>
+                </div>
+                <div style="color: #2d3436; font-style: italic; line-height: 1.8;">
+                    
+      <p><strong>"Olá, Sirlene Correa! 💕"</strong></p>
+      <p>"Adorei nossas 4 conversas esta semana! Estou começando a conhecer você cada vez melhor."</p>
+      <p>"Posso perceber seus padrões, entender como você reage às diferentes situações e isso me permite dar conselhos mais assertivos."</p>
+      <p>"Continue assim! Nossa conexão está ficando mais forte a cada conversa, e isso reflete diretamente na qualidade dos seus relatórios de saúde."</p>
+      <p style="text-align: right; margin-top: 15px;"><em>Continue confiando em mim! 💖<br>Sof.ia</em></p>
+    
+                </div>
+            </div>
+
+            <!-- Análise Médica do Dr. Vita -->
+            <div class="section" style="background: linear-gradient(135deg, #74b9ff 0%, #0984e3 100%); border-left: 5px solid #0984e3;">
+                <div style="display: flex; align-items: center; margin-bottom: 20px;">
+                    <img src="https://hlrkoyywjpckdotimtik.supabase.co/storage/v1/object/public/course-thumbnails/Dr.Vital%20sem%20fundo.png" 
+                         alt="Dr. Vital" 
+                         style="width: 80px; height: 80px; border-radius: 50%; margin-right: 20px; object-fit: cover;">
+                    <h2 style="color: white; margin: 0;">🩺 Dr. Vita - Análise Médica Personalizada</h2>
+                </div>
+                <div style="color: white; line-height: 1.8;">
+                    
+    <p><strong>"Sirlene Correa, aqui é o Dr. Vita, seu agente pessoal de saúde."</strong></p>
+    
+    <div style="background: rgba(255,255,255,0.1); padding: 15px; border-radius: 8px; margin: 15px 0;">
+      <h4 style="color: white; margin-top: 0;">📊 ANÁLISE MÉDICA ATUAL:</h4>
+      <p><strong>IMC 25.1:</strong> SOBREPESO</p>
+      <p><strong>Gordura Corporal:</strong> 25.5% (elevada)</p>
+      <p><strong>Hidratação:</strong> 55.8% (excelente hidratação)</p>
+      <p><strong>Gordura Visceral:</strong> Nível 8 (baixo risco metabólico)</p>
+      <p><strong>Metabolismo Basal:</strong> 1450 kcal/dia</p>
+    </div>
+
+    <div style="background: rgba(255,255,255,0.1); padding: 15px; border-radius: 8px; margin: 15px 0;">
+      <h4 style="color: white; margin-top: 0;">🩺 PRESCRIÇÕES MÉDICAS:</h4>
+      <p><strong>1. Controle de Peso:</strong> Perda de peso gradual (0,5-1kg/semana) recomendada.</p>
+      
+      
+      
+    </div>
+
+    <div style="background: rgba(255,255,255,0.1); padding: 15px; border-radius: 8px; margin: 15px 0;">
+      <h4 style="color: white; margin-top: 0;">⚠️ ALERTAS MÉDICOS:</h4>
+      
+      
+      
+    </div>
+
+    <p><strong>"Como seu agente pessoal de saúde, estarei monitorando sua evolução semanalmente. Realize medições regulares para análises mais precisas."</strong></p>
+    
+    <p style="text-align: right; margin-top: 15px;"><em>Dr. Vita - Medicina Personalizada e Inteligente<br>Análise baseada em bioimpedância avançada</em></p>
+  
+                </div>
+            </div>
+
+            <!-- Recomendações -->
+            <div class="section">
+                <h2>💡 Recomendações Precisas para Próxima Semana</h2>
+                <ul>
+                    
+                    <li>🎯 Foque em exercícios aeróbicos para reduzir gordura corporal</li>
+                    
+                    
+                    
+                    
+                    
+                    <li>💬 Continue suas conversas regulares com a Sof.ia!</li>
+                </ul>
+            </div>
+
+            <!-- Conquistas -->
+            
+            <div class="section">
+                <h2>🏆 Novas Conquistas</h2>
+                
+                    <div class="achievement">
+                        <div class="achievement-icon">🏆</div>
+                        <div>
+                            <h4 style="margin: 0; color: #2d3436;">Primeira Semana</h4>
+                            <p style="margin: 5px 0 0 0; color: #636e72;">Completou 7 dias consecutivos</p>
+                        </div>
+                    </div>
+                
+                    <div class="achievement">
+                        <div class="achievement-icon">🏆</div>
+                        <div>
+                            <h4 style="margin: 0; color: #2d3436;">Meta de Peso</h4>
+                            <p style="margin: 5px 0 0 0; color: #636e72;">Perdeu 3kg esta semana</p>
+                        </div>
+                    </div>
+                
+                    <div class="achievement">
+                        <div class="achievement-icon">🏆</div>
+                        <div>
+                            <h4 style="margin: 0; color: #2d3436;">Hidratação Perfeita</h4>
+                            <p style="margin: 5px 0 0 0; color: #636e72;">Manteve hidratação acima de 55%</p>
+                        </div>
+                    </div>
+                
+                    <div class="achievement">
+                        <div class="achievement-icon">🏆</div>
+                        <div>
+                            <h4 style="margin: 0; color: #2d3436;">Massa Muscular</h4>
+                            <p style="margin: 5px 0 0 0; color: #636e72;">Ganhou 1.1kg de massa muscular</p>
+                        </div>
+                    </div>
+                
+            </div>
+            
+        </div>
+
+        <div class="footer">
+            <p>📱 Continue acompanhando sua saúde no app</p>
+            <p>Este relatório foi gerado automaticamente pelo <a href="#">Dr. Vita AI</a></p>
+            <p><small>Relatório não substitui consulta médica profissional</small></p>
+        </div>
+    </div>
+</body>
+</html>

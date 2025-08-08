@@ -56,10 +56,11 @@ import GalileuRGraphPage from "./pages/GalileuRGraphPage";
 import ProfessionalReportPage from "./pages/ProfessionalReportPage";
 import AdvancedHealthDashboard from "./pages/AdvancedHealthDashboard";
 import WeeklyAssessmentDashboard from "./pages/WeeklyAssessmentDashboard";
-import ProfessionalEvaluationPage from "./pages/ProfessionalEvaluationPage";
+import ProfessionalEvaluationPage from "./pages/ProfessionalEvaluationPageClean";
 import { TestDesafioModal } from "./components/TestDesafioModal";
 import SofiaPage from "./pages/SofiaPage";
 import SubscriptionPage from "./pages/SubscriptionPage";
+import SofiaNutricionalPage from "./pages/SofiaNutricionalPage";
 
 import RankingPage from "./components/RankingPage";
 import TermsPage from "./pages/TermsPage";
@@ -185,6 +186,8 @@ const App: React.FC = () => {
             
             {/* Sofia - Dedicated nutrition AI page */}
             <Route path="/sofia" element={<SofiaPage />} />
+            {/* Nova aba Sofia Nutricional */}
+            <Route path="/sofia-nutricional" element={<SofiaNutricionalPage />} />
             
             {/* API Test - Componente para testar APIs */}
             <Route path="/api-test" element={<ApiTest />} />

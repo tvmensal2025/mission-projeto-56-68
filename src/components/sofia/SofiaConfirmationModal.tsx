@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -7,6 +7,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Check, X, Edit2, Plus } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 interface FoodItem {
   name: string;
@@ -34,24 +35,151 @@ const SofiaConfirmationModal: React.FC<SofiaConfirmationModalProps> = ({
   onConfirmation
 }) => {
   const [isCorrect, setIsCorrect] = useState<boolean | null>(null);
-  const [foodItems, setFoodItems] = useState<FoodItem[]>(() => {
-    return detectedFoods.map(food => {
-      // Se é um objeto com nome e quantidade, usar os dados dele
-      if (typeof food === 'object' && 'nome' in food && 'quantidade' in food) {
-        return {
-          name: food.nome,
-          quantity: food.quantidade,
-          unit: getUnit(food.nome)
-        };
+  
+  // --- Pré-processamento/normalização dos alimentos detectados ---
+  const normalizedInitialItems: FoodItem[] = useMemo(() => {
+    const toArray = (detectedFoods || []).map((food) => {
+      if (typeof food === 'object' && 'nome' in food) {
+        return { name: String((food as any).nome), quantity: Number((food as any).quantidade) || undefined } as { name: string; quantity?: number };
       }
-      // Se é uma string simples, usar as estimativas antigas
-      return {
-        name: food as string,
-        quantity: getEstimatedQuantity(food as string),
-        unit: getUnit(food as string)
-      };
+      return { name: String(food) } as { name: string; quantity?: number };
     });
-  });
+
+    const removeAccents = (s: string) => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    const baseNormalize = (s: string) => removeAccents(s).toLowerCase().trim();
+    
+    // Palavras-chave para agrupar como "Salada"
+    const SALAD_WORDS = new Set([
+      'salada','alface','tomate','rucula','rúcula','pepino','cenoura','agrião','agriao','mix de folhas','folhas','verdura','legumes'
+    ]);
+    
+    // Condimentos/temperos para ignorar
+    const IGNORE_WORDS = new Set([
+      'sal','pimenta','tempero','ervas','oregano','orégano','alho','cebolinha','salsa','vinagre','vinagrete','molho','azeite'
+    ]);
+    
+    // Regras de canônico (quase duplicados → um único nome)
+    const CANONICAL_RULES: Array<{ test: RegExp; name: string }> = [
+      { test: /(frango)/, name: 'Frango' },
+      { test: /(bife|carne bovina|carne|contra-file|contrafile|alcatra|carne de panela|carne grelhada)/, name: 'Carne bovina' },
+      { test: /(porco|lombo|pernil)/, name: 'Carne suína' },
+      { test: /(peixe|tilapia|salm(o|ã)0|salmao)/, name: 'Peixe' },
+      { test: /(arroz integral)/, name: 'Arroz integral' },
+      { test: /(arroz branco|arroz)/, name: 'Arroz branco' },
+      { test: /(feij(ao|ão))/, name: 'Feijão' },
+      { test: /(batata frita)/, name: 'Batata frita' },
+      { test: /(batata|mandioca|inhame)/, name: 'Batata' },
+      { test: /(ovo|omelete)/, name: 'Ovo' },
+      { test: /(pao|pão|torrada|pita|wrap)/, name: 'Pão' },
+    ];
+
+    const resultMap = new Map<string, { quantity?: number; unit: string }>();
+    let hasSalad = false;
+
+    for (const item of toArray) {
+      const raw = item.name;
+      const norm = baseNormalize(raw);
+
+      // Ignorar condimentos mínimos
+      if ([...IGNORE_WORDS].some(w => norm.includes(w))) continue;
+
+      // Agrupar componentes salada
+      if ([...SALAD_WORDS].some(w => norm.includes(w))) {
+        hasSalad = true;
+        continue;
+      }
+
+      // Encontrar canônico
+      let canonical = raw.trim();
+      const clean = norm.replace(/grelhado|assado|cozido|de panela|bovina|suina|suína|frita|cozida|grellhado/g, '').trim();
+      for (const rule of CANONICAL_RULES) {
+        if (rule.test.test(clean)) {
+          canonical = rule.name;
+          break;
+        }
+      }
+
+      const chosenQuantity = (typeof item.quantity === 'number' && item.quantity > 0)
+        ? item.quantity
+        : getEstimatedQuantity(canonical);
+      const unit = getUnit(canonical);
+
+      if (!resultMap.has(canonical)) {
+        resultMap.set(canonical, { quantity: chosenQuantity, unit });
+      } else {
+        // Se já existe, mantém a maior quantidade explícita
+        const prev = resultMap.get(canonical)!;
+        const nextQty = Math.max(prev.quantity || 0, chosenQuantity || 0) || chosenQuantity;
+        resultMap.set(canonical, { quantity: nextQty, unit: prev.unit });
+      }
+    }
+
+    if (hasSalad) {
+      // Quantidade padrão de salada coerente e consistente
+      const saladQty = 80; // g
+      resultMap.set('Salada', { quantity: saladQty, unit: 'g' });
+    }
+
+    // Converte para array ordenado por nome para estabilidade
+    return Array.from(resultMap.entries())
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .map(([name, v]) => ({ name, quantity: v.quantity || getEstimatedQuantity(name), unit: v.unit }));
+  }, [detectedFoods]);
+
+  const [foodItems, setFoodItems] = useState<FoodItem[]>(normalizedInitialItems);
+  const [addName, setAddName] = useState('');
+  const [addQty, setAddQty] = useState<string>('');
+  const [addUnit, setAddUnit] = useState<'g' | 'ml'>('g');
+
+  const canonicalizeName = (rawName: string): string | null => {
+    const removeAccents = (s: string) => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    const baseNormalize = (s: string) => removeAccents(s).toLowerCase().trim();
+    const SALAD_WORDS = ['salada','alface','tomate','rucula','rúcula','pepino','cenoura','agrião','agriao','folhas','verdura','legumes'];
+    const IGNORE_WORDS = ['sal','pimenta','tempero','ervas','oregano','orégano','alho','cebolinha','salsa','vinagre','vinagrete','molho','azeite'];
+    const norm = baseNormalize(rawName);
+    if (IGNORE_WORDS.some(w => norm.includes(w))) return null;
+    if (SALAD_WORDS.some(w => norm.includes(w))) return 'Salada';
+    const CANONICAL_RULES: Array<{ test: RegExp; name: string }> = [
+      { test: /(frango)/, name: 'Frango' },
+      { test: /(bife|carne bovina|carne|contra-file|contrafile|alcatra|carne de panela|carne grelhada)/, name: 'Carne bovina' },
+      { test: /(porco|lombo|pernil)/, name: 'Carne suína' },
+      { test: /(peixe|tilapia|salm(o|ã)o|salm[aã]o)/, name: 'Peixe' },
+      { test: /(arroz integral)/, name: 'Arroz integral' },
+      { test: /(arroz branco|arroz)/, name: 'Arroz branco' },
+      { test: /(feij(ao|ão))/, name: 'Feijão' },
+      { test: /(batata frita)/, name: 'Batata frita' },
+      { test: /(batata|mandioca|inhame)/, name: 'Batata' },
+      { test: /(ovo|omelete)/, name: 'Ovo' },
+      { test: /(pao|pão|torrada|pita|wrap)/, name: 'Pão' },
+    ];
+    const clean = norm.replace(/grelhado|assado|cozido|de panela|bovina|suina|suína|frita|cozida|grellhado/g, '').trim();
+    for (const rule of CANONICAL_RULES) {
+      if (rule.test.test(clean)) return rule.name;
+    }
+    return rawName.trim();
+  };
+
+  const handleAddCustomItem = () => {
+    const name = canonicalizeName(addName.trim());
+    if (!name) {
+      setAddName('');
+      setAddQty('');
+      return;
+    }
+    const quantity = addQty === '' ? getEstimatedQuantity(name) : Math.max(0, Number(addQty));
+    const unit = addUnit || getUnit(name);
+    setFoodItems(prev => {
+      const existsIndex = prev.findIndex(i => i.name.toLowerCase() === name.toLowerCase());
+      if (existsIndex >= 0) {
+        const updated = [...prev];
+        updated[existsIndex] = { ...updated[existsIndex], quantity: Math.max(updated[existsIndex].quantity, quantity), unit };
+        return updated;
+      }
+      return [...prev, { name, quantity, unit }];
+    });
+    setAddName('');
+    setAddQty('');
+  };
   const [newFood, setNewFood] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
@@ -252,6 +380,39 @@ const SofiaConfirmationModal: React.FC<SofiaConfirmationModalProps> = ({
                   </div>
                 </div>
               ))}
+              {/* Adicionar item (sempre disponível antes de confirmar) */}
+              <div className="mt-2 rounded-md border border-emerald-200 bg-emerald-50 p-2">
+                <div className="mb-1 text-xs text-emerald-800">Adicionar item</div>
+                <div className="flex items-center gap-2">
+                  <Input
+                    placeholder="Alimento"
+                    value={addName}
+                    onChange={(e) => setAddName(e.target.value)}
+                    className="text-sm"
+                  />
+                  <Input
+                    type="number"
+                    placeholder="Qtd"
+                    value={addQty}
+                    onChange={(e) => setAddQty(e.target.value)}
+                    className="w-20 text-sm text-center"
+                    min="0"
+                    step="0.1"
+                  />
+                  <Select value={addUnit} onValueChange={(v: 'g' | 'ml') => setAddUnit(v)}>
+                    <SelectTrigger className="w-20 h-8">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="g">g</SelectItem>
+                      <SelectItem value="ml">ml</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <Button size="sm" onClick={handleAddCustomItem} className="h-8 px-3">
+                    <Plus className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
               
               {isCorrect === false && (
                 <div className="flex gap-2 mt-3">

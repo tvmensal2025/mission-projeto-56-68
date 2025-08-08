@@ -196,7 +196,11 @@ export const HealthWheelSession: React.FC<HealthWheelSessionProps> = ({
         console.log('Area question type:', typeof area.question);
         console.log('Area question value:', area.question);
         
-        const questionText = typeof area.question === 'string' ? area.question : area.question?.text || '';
+        // Fallback robusto: se não houver pergunta, gera uma pergunta padrão
+        const fallbackText = `Como você avalia sua área de ${area.name} hoje?`;
+        const questionText = typeof area.question === 'string'
+          ? (area.question?.trim?.() ? area.question : fallbackText)
+          : (area.question?.text?.trim?.() ? area.question.text : fallbackText);
         console.log('Converted question text:', questionText);
         
         return [area.id, { 
@@ -382,6 +386,12 @@ export const HealthWheelSession: React.FC<HealthWheelSessionProps> = ({
           <div className="text-center">
             <div className="text-xl mb-4">Carregando avaliação...</div>
             <Progress value={0} className="w-64" />
+            {/* Mensagem de fallback quando não há perguntas configuradas */}
+            {systemsArray.length > 0 && (
+              <p className="text-sm text-muted-foreground mt-2">
+                Nenhuma pergunta definida para {systemsArray[0][1].name}. Usando pergunta padrão.
+              </p>
+            )}
           </div>
         </div>
       );
@@ -461,7 +471,7 @@ export const HealthWheelSession: React.FC<HealthWheelSessionProps> = ({
             <div>
               <CardTitle className="text-lg">{currentSystemData?.name}</CardTitle>
               <p className="text-sm text-muted-foreground">
-                Pergunta {currentQuestionIndex + 1} de {currentSystemData?.questions.length || 0}
+                Área {currentSystemIndex + 1} de {systemsArray.length} • Pergunta {currentQuestionIndex + 1} de {currentSystemData?.questions.length || 0}
               </p>
             </div>
           </div>
@@ -477,9 +487,15 @@ export const HealthWheelSession: React.FC<HealthWheelSessionProps> = ({
             </p>
             <div className="space-y-3">
               {/* Verificar se é Roda da Vida (com emoji_options) ou Roda da Saúde */}
-              {content.areas && content.areas.find(area => area.id === currentSystemKey)?.emoji_options ? (
-                // Roda da Vida - mostrar opções de emoji
-                content.areas.find(area => area.id === currentSystemKey)?.emoji_options.map((option) => (
+              {content.areas ? (
+                // Roda da Vida - mostrar opções de emoji (com fallback caso não haja emoji_options)
+                (content.areas.find(area => area.id === currentSystemKey)?.emoji_options || [
+                  { value: 1, emoji: '😟', label: 'Muito baixa' },
+                  { value: 2, emoji: '😕', label: 'Baixa' },
+                  { value: 3, emoji: '😐', label: 'Média' },
+                  { value: 4, emoji: '🙂', label: 'Boa' },
+                  { value: 5, emoji: '😄', label: 'Excelente' },
+                ]).map((option) => (
                   <Button
                     key={option.value}
                     variant="outline"

@@ -40,21 +40,28 @@ export const SessionToolsIntegration: React.FC<SessionToolsIntegrationProps> = (
         insights: toolData.insights || toolData.recommendations || []
       };
 
-      // Salvar no banco de dados
-      const { error } = await supabase
-        .from('sessions')
-        .update({
-          content: {
-            ...existingData,
-            [selectedTool.id]: toolResponse
-          }
-        })
-        .eq('id', userSessionId);
+      // Buscar tools_data atual da user_session
+      const { data: current, error: fetchError } = await supabase
+        .from('user_sessions')
+        .select('tools_data')
+        .eq('id', userSessionId)
+        .single();
+      if (fetchError) throw fetchError;
 
-      if (error) throw error;
+      const newToolsData = {
+        ...(current?.tools_data || {}),
+        [selectedTool.id]: toolResponse
+      };
+
+      // Salvar no banco de dados na tabela correta (user_sessions)
+      const { error: updateError } = await supabase
+        .from('user_sessions')
+        .update({ tools_data: newToolsData, last_activity: new Date().toISOString() })
+        .eq('id', userSessionId);
+      if (updateError) throw updateError;
 
       toast({
-        title: "Ferramenta concluída!",
+        title: 'Ferramenta concluída!',
         description: `${selectedTool.name} foi concluída e os dados foram salvos.`,
       });
 
@@ -62,9 +69,9 @@ export const SessionToolsIntegration: React.FC<SessionToolsIntegrationProps> = (
     } catch (error: any) {
       console.error('Erro ao salvar dados da ferramenta:', error);
       toast({
-        title: "Erro ao salvar",
-        description: "Não foi possível salvar os dados da ferramenta. Tente novamente.",
-        variant: "destructive"
+        title: 'Erro ao salvar',
+        description: 'Não foi possível salvar os dados da ferramenta. Tente novamente.',
+        variant: 'destructive'
       });
     } finally {
       setIsCompleting(false);

@@ -130,51 +130,27 @@ export const UserProfile = ({ user, onUpdateProfile }: UserProfileProps) => {
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
           <div className="relative">
-            <Avatar className="h-20 w-20">
+            <Avatar
+              className="h-20 w-20 cursor-pointer"
+              onClick={() => fileInputRef.current?.click()}
+              title="Alterar foto do perfil"
+            >
               <AvatarImage src={profileData.avatarUrl} alt={profileData.fullName} />
               <AvatarFallback className="bg-gradient-to-br from-blue-500 to-purple-600 text-white text-xl font-bold">
                 {getInitials(profileData.fullName)}
               </AvatarFallback>
             </Avatar>
             
-            {/* Botão de upload de foto */}
-            <Dialog>
-              <DialogTrigger asChild>
-                <Button
-                  size="icon"
-                  className="absolute -bottom-2 -right-2 h-8 w-8 bg-blue-600 hover:bg-blue-700"
-                  disabled={isUploading}
-                >
-                  <Camera className="h-4 w-4" />
-                </Button>
-              </DialogTrigger>
-              <DialogContent>
-                <DialogHeader>
-                  <DialogTitle>Alterar Foto do Perfil</DialogTitle>
-                  <DialogDescription>
-                    Escolha uma nova imagem para seu perfil (máximo 5MB)
-                  </DialogDescription>
-                </DialogHeader>
-                <div className="space-y-4">
-                  <div className="text-center">
-                    <Avatar className="h-32 w-32 mx-auto mb-4">
-                      <AvatarImage src={profileData.avatarUrl} alt={profileData.fullName} />
-                      <AvatarFallback className="bg-gradient-to-br from-blue-500 to-purple-600 text-white text-2xl font-bold">
-                        {getInitials(profileData.fullName)}
-                      </AvatarFallback>
-                    </Avatar>
-                  </div>
-                  <Button
-                    onClick={() => fileInputRef.current?.click()}
-                    disabled={isUploading}
-                    className="w-full"
-                  >
-                    <Upload className="h-4 w-4 mr-2" />
-                    {isUploading ? 'Enviando...' : 'Escolher Nova Foto'}
-                  </Button>
-                </div>
-              </DialogContent>
-            </Dialog>
+            {/* Ação de upload simplificada: clique no avatar ou no botão pequeno */}
+            <Button
+              size="icon"
+              className="absolute -bottom-2 -right-2 h-8 w-8 bg-blue-600 hover:bg-blue-700"
+              disabled={isUploading}
+              onClick={() => fileInputRef.current?.click()}
+              title="Escolher nova foto"
+            >
+              <Camera className="h-4 w-4" />
+            </Button>
             
             <input
               ref={fileInputRef}

@@ -3,7 +3,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { Resend } from 'npm:resend@2.0.0';
 
 const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Origin': 'https://institutodossonhos.com.br, https://www.institutodossonhos.com.br, https://relatorio.institutodossonhos.com.br, http://localhost:3000, http://localhost:5173',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
   'Access-Control-Allow-Methods': 'POST, GET, OPTIONS',
 };
@@ -62,23 +62,84 @@ serve(async (req) => {
 
     if (isTestMode) {
       // Modo de teste - enviar para email específico
-      const testEmail = body.testEmail || 'suporte@institutodossonhos.com.br';
-      const testUserName = body.testUserName || 'Usuário Teste';
+      const testEmail = body.testEmail || 'tvmensal2025@gmail.com';
+      const testUserName = body.testUserName || 'Sirlene Correa';
+      const returnHTML = body.returnHTML === true;
+
+      // Criar ou verificar usuário Sirlene
+      let sirleneUser;
+      try {
+        const { data: existingUser } = await supabase
+          .from('profiles')
+          .select('id, full_name, email')
+          .eq('email', testEmail)
+          .single();
+
+        if (existingUser) {
+          sirleneUser = existingUser;
+          console.log('✅ Usuário Sirlene encontrado:', sirleneUser);
+        } else {
+          // Criar usuário Sirlene se não existir
+          const { data: newUser, error: createError } = await supabase
+            .from('profiles')
+            .insert({
+              id: 'sirlene-test-user-' + Date.now(),
+              full_name: testUserName,
+              email: testEmail,
+              created_at: new Date().toISOString()
+            })
+            .select()
+            .single();
+
+          if (createError) {
+            console.log('⚠️ Erro ao criar usuário, usando dados fictícios:', createError.message);
+            sirleneUser = {
+              id: 'sirlene-test-user',
+              full_name: testUserName,
+              email: testEmail
+            };
+          } else {
+            sirleneUser = newUser;
+            console.log('✅ Usuário Sirlene criado:', sirleneUser);
+          }
+        }
+      } catch (error) {
+        console.log('⚠️ Erro ao buscar/criar usuário, usando dados fictícios:', error.message);
+        sirleneUser = {
+          id: 'sirlene-test-user',
+          full_name: testUserName,
+          email: testEmail
+        };
+      }
 
       const testUser = {
-        user_id: 'test-user-id',
-        full_name: testUserName,
-        email: testEmail
+        user_id: sirleneUser.id,
+        full_name: sirleneUser.full_name,
+        email: sirleneUser.email
       };
 
-      console.log(`🧪 Modo de teste: enviando email para ${testEmail}`);
+      console.log(`🧪 Modo de teste: ${returnHTML ? 'retornando HTML' : 'enviando email'} para ${testEmail}`);
+
+      // Se returnHTML for true, retornar HTML em vez de enviar email
+      if (returnHTML) {
+        const reportData = await generateWeeklyReportData(supabase, testUser);
+        const htmlContent = generateWeeklyReportHTML(reportData);
+        
+        return new Response(htmlContent, {
+          headers: { 
+            ...corsHeaders, 
+            'Content-Type': 'text/html; charset=utf-8' 
+          }
+        });
+      }
 
       await generateAndSendWeeklyReport(supabase, testUser);
 
       return new Response(JSON.stringify({
         success: true,
         message: `Email de teste enviado para ${testEmail}`,
-        testMode: true
+        testMode: true,
+        user: sirleneUser
       }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
@@ -86,7 +147,7 @@ serve(async (req) => {
 
     // Modo normal - processar todos os usuários
     const { data: users, error: usersError } = await supabase
-      .from('user_profiles')
+      .from('profiles')
       .select('user_id, full_name, email')
       .not('email', 'is', null);
 
@@ -125,48 +186,249 @@ serve(async (req) => {
   }
 });
 
-async function generateAndSendWeeklyReport(supabase: any, user: any) {
+async function generateWeeklyReportData(supabase: any, user: any): Promise<WeeklyReportData> {
   // Buscar dados completos do usuário
   const weekStart = new Date();
   weekStart.setDate(weekStart.getDate() - 7);
 
-  const [
-    { data: measurements },
-    { data: healthDiary },
-    { data: missions },
-    { data: weeklyAnalysis },
-    { data: achievements },
-    { data: examAnalyses },
-    { data: conversations },
-    { data: bioimpedanceData },
-    { data: physicalData }
-  ] = await Promise.all([
-    supabase.from('weight_measurements').select('*').eq('user_id', user.user_id).gte('measurement_date', weekStart.toISOString().split('T')[0]).order('measurement_date', { ascending: false }),
-    supabase.from('health_diary').select('*').eq('user_id', user.user_id).gte('date', weekStart.toISOString().split('T')[0]).order('date', { ascending: false }),
-    supabase.from('daily_mission_sessions').select('*').eq('user_id', user.user_id).gte('date', weekStart.toISOString().split('T')[0]).order('date', { ascending: false }),
-    supabase.from('weekly_analyses').select('*').eq('user_id', user.user_id).order('semana_inicio', { ascending: false }).limit(1),
-    supabase.from('user_achievements').select('*').eq('user_id', user.user_id).gte('unlocked_at', weekStart.toISOString()),
-    supabase.from('medical_exam_analyses').select('*').eq('user_id', user.user_id).gte('created_at', weekStart.toISOString()).order('created_at', { ascending: false }),
-    supabase.from('chat_conversations').select('*').eq('user_id', user.user_id).gte('created_at', weekStart.toISOString()),
-    supabase.from('bioimpedance_analysis').select('*').eq('user_id', user.user_id).gte('created_at', weekStart.toISOString()).order('created_at', { ascending: false }),
-    supabase.from('user_physical_data').select('*').eq('user_id', user.user_id).limit(1)
-  ]);
+  // Se for modo de teste, usar dados fictícios
+  if (user.user_id.includes('test-user') || user.user_id === 'test-user-id' || user.user_id === '550e8400-e29b-41d4-a716-446655440000') {
+    console.log('🧪 Usando dados de teste');
+    
+    const testData = {
+      measurements: [
+        { 
+          peso_kg: 68.5, 
+          measurement_date: new Date().toISOString().split('T')[0],
+          altura_cm: 165,
+          imc: 25.1,
+          gordura_corporal_percent: 25.5,
+          agua_corporal_percent: 55.8,
+          gordura_visceral_nivel: 8,
+          metabolismo_basal_kcal: 1450,
+          massa_muscular_kg: 42.3,
+          massa_ossea_kg: 2.8,
+          proteina_corporal_percent: 16.2,
+          idade_metabolica: 32,
+          nivel_atividade: 'moderado'
+        },
+        { 
+          peso_kg: 69.2, 
+          measurement_date: new Date(Date.now() - 24*60*60*1000).toISOString().split('T')[0],
+          altura_cm: 165,
+          imc: 25.4,
+          gordura_corporal_percent: 26.1,
+          agua_corporal_percent: 55.2,
+          gordura_visceral_nivel: 8,
+          metabolismo_basal_kcal: 1445,
+          massa_muscular_kg: 42.1,
+          massa_ossea_kg: 2.8,
+          proteina_corporal_percent: 16.0,
+          idade_metabolica: 33,
+          nivel_atividade: 'moderado'
+        },
+        { 
+          peso_kg: 70.0, 
+          measurement_date: new Date(Date.now() - 2*24*60*60*1000).toISOString().split('T')[0],
+          altura_cm: 165,
+          imc: 25.7,
+          gordura_corporal_percent: 26.8,
+          agua_corporal_percent: 54.7,
+          gordura_visceral_nivel: 9,
+          metabolismo_basal_kcal: 1440,
+          massa_muscular_kg: 41.8,
+          massa_ossea_kg: 2.8,
+          proteina_corporal_percent: 15.8,
+          idade_metabolica: 34,
+          nivel_atividade: 'moderado'
+        },
+        { 
+          peso_kg: 70.8, 
+          measurement_date: new Date(Date.now() - 3*24*60*60*1000).toISOString().split('T')[0],
+          altura_cm: 165,
+          imc: 26.0,
+          gordura_corporal_percent: 27.2,
+          agua_corporal_percent: 54.3,
+          gordura_visceral_nivel: 9,
+          metabolismo_basal_kcal: 1435,
+          massa_muscular_kg: 41.5,
+          massa_ossea_kg: 2.8,
+          proteina_corporal_percent: 15.6,
+          idade_metabolica: 35,
+          nivel_atividade: 'moderado'
+        },
+        { 
+          peso_kg: 71.5, 
+          measurement_date: new Date(Date.now() - 4*24*60*60*1000).toISOString().split('T')[0],
+          altura_cm: 165,
+          imc: 26.3,
+          gordura_corporal_percent: 27.8,
+          agua_corporal_percent: 53.9,
+          gordura_visceral_nivel: 10,
+          metabolismo_basal_kcal: 1430,
+          massa_muscular_kg: 41.2,
+          massa_ossea_kg: 2.8,
+          proteina_corporal_percent: 15.4,
+          idade_metabolica: 36,
+          nivel_atividade: 'moderado'
+        }
+      ],
+      healthDiary: [
+        { mood_rating: 8, energy_level: 7, stress_level: 3, date: new Date().toISOString().split('T')[0] },
+        { mood_rating: 7, energy_level: 6, stress_level: 4, date: new Date(Date.now() - 24*60*60*1000).toISOString().split('T')[0] },
+        { mood_rating: 9, energy_level: 8, stress_level: 2, date: new Date(Date.now() - 2*24*60*60*1000).toISOString().split('T')[0] },
+        { mood_rating: 6, energy_level: 5, stress_level: 5, date: new Date(Date.now() - 3*24*60*60*1000).toISOString().split('T')[0] },
+        { mood_rating: 8, energy_level: 7, stress_level: 3, date: new Date(Date.now() - 4*24*60*60*1000).toISOString().split('T')[0] }
+      ],
+      missions: [
+        { is_completed: true, total_points: 15, date: new Date().toISOString().split('T')[0] },
+        { is_completed: true, total_points: 20, date: new Date(Date.now() - 24*60*60*1000).toISOString().split('T')[0] },
+        { is_completed: true, total_points: 12, date: new Date(Date.now() - 2*24*60*60*1000).toISOString().split('T')[0] },
+        { is_completed: false, total_points: 8, date: new Date(Date.now() - 3*24*60*60*1000).toISOString().split('T')[0] },
+        { is_completed: true, total_points: 18, date: new Date(Date.now() - 4*24*60*60*1000).toISOString().split('T')[0] }
+      ],
+      weeklyAnalysis: {
+        health_score: 85,
+        weight_trend: 'diminuindo',
+        sleep_quality: 'boa',
+        hydration_level: 'adequada'
+      },
+      achievements: [
+        { title: 'Primeira Semana', description: 'Completou 7 dias consecutivos', unlocked_at: new Date().toISOString() },
+        { title: 'Meta de Peso', description: 'Perdeu 3kg esta semana', unlocked_at: new Date(Date.now() - 24*60*60*1000).toISOString() },
+        { title: 'Hidratação Perfeita', description: 'Manteve hidratação acima de 55%', unlocked_at: new Date(Date.now() - 2*24*60*60*1000).toISOString() },
+        { title: 'Massa Muscular', description: 'Ganhou 1.1kg de massa muscular', unlocked_at: new Date(Date.now() - 3*24*60*60*1000).toISOString() }
+      ],
+      examAnalyses: [],
+      conversations: [
+        { content: 'Olá Sofia, como estou hoje? Estou me sentindo muito bem!', created_at: new Date().toISOString() },
+        { content: 'Vou fazer exercícios hoje! Quero manter a consistência.', created_at: new Date(Date.now() - 24*60*60*1000).toISOString() },
+        { content: 'Sofia, qual é a melhor hora para fazer exercícios?', created_at: new Date(Date.now() - 2*24*60*60*1000).toISOString() },
+        { content: 'Consegui perder peso esta semana! Estou muito feliz!', created_at: new Date(Date.now() - 3*24*60*60*1000).toISOString() }
+      ],
+      bioimpedanceData: [
+        { 
+          body_fat_percentage: 25.5,
+          muscle_mass: 45.2,
+          water_percentage: 55.8,
+          bone_mass: 2.8,
+          protein_percentage: 16.2,
+          metabolic_age: 32,
+          visceral_fat_level: 8,
+          bmr: 1450,
+          created_at: new Date().toISOString()
+        },
+        { 
+          body_fat_percentage: 26.1,
+          muscle_mass: 44.8,
+          water_percentage: 55.2,
+          bone_mass: 2.8,
+          protein_percentage: 16.0,
+          metabolic_age: 33,
+          visceral_fat_level: 8,
+          bmr: 1445,
+          created_at: new Date(Date.now() - 24*60*60*1000).toISOString()
+        }
+      ],
+      physicalData: {
+        height: 165,
+        height_cm: 165,
+        age: 35,
+        activity_level: 'moderado'
+      }
+    };
 
-  // Gerar HTML do relatório
-  const reportHTML = generateWeeklyReportHTML({
+        // Retornar dados de teste
+    return {
+      user,
+      ...testData
+    };
+  }
+
+  // Buscar dados reais do usuário
+  const { data: measurements } = await supabase
+    .from('measurements')
+    .select('*')
+    .eq('user_id', user.user_id)
+    .gte('measurement_date', weekStart.toISOString().split('T')[0])
+    .order('measurement_date', { ascending: false });
+
+  const { data: healthDiary } = await supabase
+    .from('health_diary')
+    .select('*')
+    .eq('user_id', user.user_id)
+    .gte('date', weekStart.toISOString().split('T')[0])
+    .order('date', { ascending: false });
+
+  const { data: missions } = await supabase
+    .from('missions')
+    .select('*')
+    .eq('user_id', user.user_id)
+    .gte('date', weekStart.toISOString().split('T')[0])
+    .order('date', { ascending: false });
+
+  const { data: weeklyAnalysis } = await supabase
+    .from('weekly_analysis')
+    .select('*')
+    .eq('user_id', user.user_id)
+    .gte('week_start', weekStart.toISOString().split('T')[0])
+    .single();
+
+  const { data: achievements } = await supabase
+    .from('achievements')
+    .select('*')
+    .eq('user_id', user.user_id)
+    .gte('unlocked_at', weekStart.toISOString())
+    .order('unlocked_at', { ascending: false });
+
+  const { data: examAnalyses } = await supabase
+    .from('exam_analyses')
+    .select('*')
+    .eq('user_id', user.user_id)
+    .gte('created_at', weekStart.toISOString())
+    .order('created_at', { ascending: false });
+
+  const { data: conversations } = await supabase
+    .from('conversations')
+    .select('*')
+    .eq('user_id', user.user_id)
+    .gte('created_at', weekStart.toISOString())
+    .order('created_at', { ascending: false });
+
+  const { data: bioimpedanceData } = await supabase
+    .from('bioimpedance_data')
+    .select('*')
+    .eq('user_id', user.user_id)
+    .gte('created_at', weekStart.toISOString())
+    .order('created_at', { ascending: false });
+
+  const { data: physicalData } = await supabase
+    .from('physical_data')
+    .select('*')
+    .eq('user_id', user.user_id)
+    .single();
+
+  return {
     user,
     measurements: measurements || [],
     healthDiary: healthDiary || [],
     missions: missions || [],
-    weeklyAnalysis: weeklyAnalysis?.[0],
+    weeklyAnalysis: weeklyAnalysis || {},
     achievements: achievements || [],
     examAnalyses: examAnalyses || [],
     conversations: conversations || [],
     bioimpedanceData: bioimpedanceData || [],
-    physicalData: physicalData?.[0]
-  });
+    physicalData: physicalData || {}
+  };
+}
 
-  // Enviar email usando Resend (padrão)
+async function generateAndSendWeeklyReport(supabase: any, user: any) {
+  const reportData = await generateWeeklyReportData(supabase, user);
+  
+  // Gerar HTML do relatório
+  const reportHTML = generateWeeklyReportHTML(reportData);
+
+  // Enviar email usando Resend
   const resendApiKey = Deno.env.get('RESEND_API_KEY');
   if (resendApiKey) {
     const resend = new Resend(resendApiKey);
@@ -189,15 +451,18 @@ async function generateAndSendWeeklyReport(supabase: any, user: any) {
 function generateWeeklyReportHTML(data: WeeklyReportData): string {
   const { user, measurements, healthDiary, missions, weeklyAnalysis, achievements, examAnalyses, conversations, bioimpedanceData, physicalData } = data;
   
-  // Calcular estatísticas
+  // Calcular estatísticas médicas
   const weightChange = measurements.length >= 2 ? 
     (measurements[0].peso_kg - measurements[measurements.length - 1].peso_kg) : 0;
   
-  const avgMood = healthDiary.length > 0 ? 
-    healthDiary.reduce((sum, h) => sum + (h.mood_rating || 0), 0) / healthDiary.length : 0;
-  
-  const completedMissions = missions.filter(m => m.is_completed).length;
-  const totalPoints = missions.reduce((sum, m) => sum + (m.total_points || 0), 0);
+  // Dados da última medição de bioimpedância
+  const latestMeasurement = measurements.length > 0 ? measurements[0] : null;
+  const imc = latestMeasurement ? (latestMeasurement.peso_kg / Math.pow((physicalData?.height_cm || 165) / 100, 2)) : 0;
+  const gorduraCorporal = latestMeasurement?.gordura_corporal_percent || 0;
+  const aguaCorporal = latestMeasurement?.agua_corporal_percent || 0;
+  const gorduraVisceral = latestMeasurement?.gordura_visceral_nivel || 0;
+  const metabolismo = latestMeasurement?.metabolismo_basal_kcal || 0;
+  const massaMuscular = latestMeasurement?.massa_muscular_kg || 0;
 
   // Contar conversas da semana para mensagem personalizada
   const weeklyConversations = conversations.length;
@@ -289,6 +554,11 @@ function generateWeeklyReportHTML(data: WeeklyReportData): string {
             color: #666;
             margin-top: 5px;
         }
+        .stat-comparison {
+            color: #999;
+            font-size: 0.8em;
+            margin-top: 3px;
+        }
         .achievement {
             background: linear-gradient(135deg, #ffeaa7 0%, #fab1a0 100%);
             color: #2d3436;
@@ -344,89 +614,66 @@ function generateWeeklyReportHTML(data: WeeklyReportData): string {
         </div>
 
         <div class="content">
-            <!-- Resumo Executivo -->
-            <div class="section">
-                <h2>📊 Resumo da Semana</h2>
-                <div class="stats-grid">
-                    <div class="stat-card">
-                        <div class="stat-value ${weightChange > 0 ? 'trend-up' : weightChange < 0 ? 'trend-down' : 'trend-stable'}">
-                            ${weightChange > 0 ? '+' : ''}${weightChange.toFixed(1)}kg
-                        </div>
-                        <div class="stat-label">Variação de Peso</div>
-                    </div>
-                    <div class="stat-card">
-                        <div class="stat-value">${avgMood.toFixed(1)}/10</div>
-                        <div class="stat-label">Humor Médio</div>
-                    </div>
-                    <div class="stat-card">
-                        <div class="stat-value">${completedMissions}</div>
-                        <div class="stat-label">Missões Completas</div>
-                    </div>
-                    <div class="stat-card">
-                        <div class="stat-value">${totalPoints}</div>
-                        <div class="stat-label">Pontos Conquistados</div>
-                    </div>
-                </div>
-            </div>
 
-            <!-- Análise Completa de Bioimpedância -->
+            <!-- Análise Completa de Sua Evolução -->
             ${measurements.length > 0 ? `
             <div class="section">
-                <h2>⚖️ Análise Completa de Bioimpedância</h2>
+                <h2>📈 Análise Completa de Sua Evolução</h2>
                 
                 <!-- Resumo Principal -->
                 <div class="stats-grid">
                     <div class="stat-card">
                         <div class="stat-value">${measurements[0].peso_kg}kg</div>
                         <div class="stat-label">Peso Atual</div>
+                        <div class="stat-comparison">${measurements.length > 1 ? `vs ${measurements[1].peso_kg}kg` : ''}</div>
                     </div>
                     <div class="stat-card">
                         <div class="stat-value">${measurements[0].imc?.toFixed(1) || 'N/A'}</div>
                         <div class="stat-label">IMC</div>
+                        <div class="stat-comparison">${measurements.length > 1 ? `vs ${measurements[1].imc?.toFixed(1) || 'N/A'}` : ''}</div>
                     </div>
                     ${measurements[0].gordura_corporal_percent ? `
                     <div class="stat-card">
                         <div class="stat-value">${measurements[0].gordura_corporal_percent.toFixed(1)}%</div>
                         <div class="stat-label">Gordura Corporal</div>
+                        <div class="stat-comparison">${measurements.length > 1 ? `vs ${measurements[1].gordura_corporal_percent?.toFixed(1) || 0}%` : ''}</div>
                     </div>
                     ` : ''}
                     ${measurements[0].agua_corporal_percent ? `
                     <div class="stat-card">
                         <div class="stat-value">${measurements[0].agua_corporal_percent.toFixed(1)}%</div>
                         <div class="stat-label">Água Corporal</div>
+                        <div class="stat-comparison">${measurements.length > 1 ? `vs ${measurements[1].agua_corporal_percent?.toFixed(1) || 0}%` : ''}</div>
                     </div>
                     ` : ''}
                     ${measurements[0].massa_muscular_kg ? `
                     <div class="stat-card">
                         <div class="stat-value">${measurements[0].massa_muscular_kg.toFixed(1)}kg</div>
                         <div class="stat-label">Massa Muscular</div>
+                        <div class="stat-comparison">${measurements.length > 1 ? `vs ${measurements[1].massa_muscular_kg?.toFixed(1) || 0}kg` : ''}</div>
                     </div>
                     ` : ''}
                     ${measurements[0].massa_ossea_kg ? `
                     <div class="stat-card">
                         <div class="stat-value">${measurements[0].massa_ossea_kg.toFixed(1)}kg</div>
                         <div class="stat-label">Massa Óssea</div>
+                        <div class="stat-comparison">${measurements.length > 1 ? `vs ${measurements[1].massa_ossea_kg?.toFixed(1) || 0}kg` : ''}</div>
                     </div>
                     ` : ''}
                     ${measurements[0].metabolismo_basal_kcal ? `
                     <div class="stat-card">
                         <div class="stat-value">${measurements[0].metabolismo_basal_kcal}</div>
                         <div class="stat-label">Metabolismo Basal (kcal)</div>
+                        <div class="stat-comparison">${measurements.length > 1 ? `vs ${measurements[1].metabolismo_basal_kcal || 0}` : ''}</div>
                     </div>
                     ` : ''}
                     ${measurements[0].gordura_visceral_nivel ? `
                     <div class="stat-card">
                         <div class="stat-value">${measurements[0].gordura_visceral_nivel}</div>
                         <div class="stat-label">Gordura Visceral</div>
+                        <div class="stat-comparison">${measurements.length > 1 ? `vs ${measurements[1].gordura_visceral_nivel || 0}` : ''}</div>
                     </div>
                     ` : ''}
-                </div>
-
-                <!-- Gráfico de Evolução -->
-                <div style="background: white; padding: 20px; border-radius: 10px; margin-top: 20px;">
-                    <h3 style="color: #667eea; margin-bottom: 20px;">📈 Evolução Semanal</h3>
-                    <canvas id="weightChart" width="800" height="400" style="max-width: 100%;"></canvas>
-                    ${chartData}
                 </div>
                 
                 <div class="progress-bar">
@@ -525,15 +772,32 @@ function generateWeeklyReportHTML(data: WeeklyReportData): string {
             <div class="section">
                 <h2>💡 Recomendações Precisas para Próxima Semana</h2>
                 <ul>
-                    ${completedMissions < 5 ? '<li>🎯 Tente completar mais missões diárias para manter a consistência</li>' : ''}
-                    ${avgMood < 7 ? '<li>😊 Considere atividades que melhorem seu humor, como meditação ou exercícios leves</li>' : ''}
                     ${measurements.length < 3 ? '<li>⚖️ Mantenha pesagens regulares para acompanhar melhor seu progresso</li>' : ''}
-                    ${healthDiary.length < 5 ? '<li>📝 Continue registrando seus hábitos diários no app</li>' : ''}
+                    ${gorduraCorporal > 25 ? '<li>🎯 Foque em exercícios aeróbicos para reduzir gordura corporal</li>' : ''}
+                    ${aguaCorporal < 55 ? '<li>💧 Aumente a hidratação para 2-3L de água por dia</li>' : ''}
+                    ${gorduraVisceral > 10 ? '<li>⚠️ Gordura visceral elevada - priorize exercícios cardiovasculares</li>' : ''}
+                    ${massaMuscular < 40 ? '<li>💪 Inclua treinos de força para aumentar massa muscular</li>' : ''}
                     ${weeklyConversations === 0 ? '<li>💬 <strong>Converse com a Sof.ia para relatórios mais precisos!</strong></li>' : ''}
                     ${weeklyConversations > 0 && weeklyConversations < 3 ? '<li>💬 Continue conversando com a Sof.ia - mais conversas = relatórios mais detalhados!</li>' : ''}
                     ${weeklyConversations >= 3 ? '<li>💬 Continue suas conversas regulares com a Sof.ia!</li>' : ''}
                 </ul>
             </div>
+
+            <!-- Conquistas -->
+            ${achievements.length > 0 ? `
+            <div class="section">
+                <h2>🏆 Novas Conquistas</h2>
+                ${achievements.map(achievement => `
+                    <div class="achievement">
+                        <div class="achievement-icon">🏆</div>
+                        <div>
+                            <h4 style="margin: 0; color: #2d3436;">${achievement.title}</h4>
+                            <p style="margin: 5px 0 0 0; color: #636e72;">${achievement.description}</p>
+                        </div>
+                    </div>
+                `).join('')}
+            </div>
+            ` : ''}
         </div>
 
         <div class="footer">
@@ -542,17 +806,6 @@ function generateWeeklyReportHTML(data: WeeklyReportData): string {
             <p><small>Relatório não substitui consulta médica profissional</small></p>
         </div>
     </div>
-    
-    <!-- Chart.js para gráficos -->
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <script>
-        // Configurar gráfico de evolução
-        if (document.getElementById('weightChart')) {
-            const ctx = document.getElementById('weightChart').getContext('2d');
-            const chartConfig = ${chartData};
-            new Chart(ctx, chartConfig);
-        }
-    </script>
 </body>
 </html>`;
 }

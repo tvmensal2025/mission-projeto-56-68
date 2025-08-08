@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { useToast } from '@/hooks/use-toast';
 import { 
   Users, 
   Activity, 
@@ -10,7 +12,9 @@ import {
   Brain,
   MessageCircle,
   Trophy,
-  FileText
+  FileText,
+  Mail,
+  Loader2
 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 
@@ -45,6 +49,8 @@ const AdminDashboard: React.FC = () => {
     drVitalReports: 0
   });
   const [loading, setLoading] = useState(true);
+  const [testingEmail, setTestingEmail] = useState(false);
+  const { toast } = useToast();
 
   useEffect(() => {
     loadStats();
@@ -135,6 +141,71 @@ const AdminDashboard: React.FC = () => {
     }
   };
 
+  const testWeeklyEmail = async () => {
+    try {
+      setTestingEmail(true);
+      
+      // Buscar usuário Sirlene Correa primeiro
+      const { data: sirleneUser } = await supabase
+        .from('profiles')
+        .select('id, full_name, email')
+        .eq('email', 'tvmensal2025@gmail.com')
+        .single();
+
+      let testUser;
+      if (sirleneUser) {
+        testUser = sirleneUser;
+      } else {
+        // Fallback: buscar qualquer usuário
+        const { data: anyUser } = await supabase
+          .from('profiles')
+          .select('id, full_name, email')
+          .limit(1)
+          .single();
+        testUser = anyUser;
+      }
+
+      if (!testUser) {
+        throw new Error('Nenhum usuário encontrado para teste');
+      }
+
+      // Chamar Edge Function usando fetch direto (como no teste que funcionou)
+      const response = await fetch('https://hlrkoyywjpckdotimtik.supabase.co/functions/v1/weekly-health-report', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${(await supabase.auth.getSession()).data.session?.access_token || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhscmtveXl3anBja2RvdGltdGlrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTMxNTMwNDcsImV4cCI6MjA2ODcyOTA0N30.kYEtg1hYG2pmcyIeXRs-vgNIVOD76Yu7KPlyFN0vdUI'}`
+        },
+        body: JSON.stringify({
+          testMode: true,
+          testEmail: testUser.email,
+          testUserName: testUser.full_name
+        })
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(`Erro na Edge Function: ${result.error || 'Status ' + response.status}`);
+      }
+
+      toast({
+        title: "✅ Email Enviado!",
+        description: `Relatório semanal enviado para ${testUser.full_name} (${testUser.email})`,
+      });
+
+    } catch (error: any) {
+      console.error('Erro no teste de email:', error);
+      toast({
+        title: "❌ Erro no Teste",
+        description: error.message,
+        variant: "destructive"
+      });
+    } finally {
+      setTestingEmail(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center p-8">
@@ -145,12 +216,50 @@ const AdminDashboard: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h2 className="text-3xl font-bold">Dashboard Administrativo</h2>
-        <p className="text-muted-foreground">
-          Visão geral completa do sistema
-        </p>
+      <div className="flex items-center justify-between">
+        <h1 className="text-3xl font-bold">Dashboard Admin</h1>
+        <div className="text-sm text-muted-foreground">
+          Última atualização: {new Date().toLocaleString('pt-BR')}
+        </div>
       </div>
+
+      {/* Seção de Testes do Sistema */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Mail className="h-5 w-5" />
+            Testes do Sistema
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-4">
+            <div>
+              <h3 className="font-medium mb-2">📧 Teste de Email Semanal</h3>
+              <p className="text-sm text-muted-foreground mb-4">
+                Testa o envio de email semanal usando o Resend. O email será enviado 
+                especificamente para Sirlene Correa (tvmensal2025@gmail.com).
+              </p>
+              <Button 
+                onClick={testWeeklyEmail}
+                disabled={testingEmail}
+                className="bg-blue-600 hover:bg-blue-700"
+              >
+                {testingEmail ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                    Enviando...
+                  </>
+                ) : (
+                  <>
+                    <Mail className="h-4 w-4 mr-2" />
+                    Testar Email para Sirlene
+                  </>
+                )}
+              </Button>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Estatísticas Principais */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">

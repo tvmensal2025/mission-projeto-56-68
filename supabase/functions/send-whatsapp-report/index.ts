@@ -48,7 +48,7 @@ serve(async (req) => {
       // Buscar todos os usuários para envio automático
       console.log('📱 Envio automático - buscando todos os usuários...');
       const result = await supabase
-        .from('user_profiles')
+        .from('profiles')
         .select('user_id, full_name, email')
         .not('email', 'is', null);
       users = result.data;
@@ -57,7 +57,7 @@ serve(async (req) => {
       // Buscar usuários específicos
       console.log('👥 Envio manual - buscando usuários específicos...');
       const result = await supabase
-        .from('user_profiles')
+        .from('profiles')
         .select('user_id, full_name, email')
         .in('user_id', userIds);
       users = result.data;

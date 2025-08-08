@@ -66,7 +66,7 @@ serve(async (req) => {
       { data: missions },
       { data: healthDiary }
     ] = await Promise.all([
-      supabase.from('user_profiles').select('*').eq('user_id', userId).single(),
+      supabase.from('profiles').select('*').eq('user_id', userId).single(),
       supabase.from('weight_measurements').select('*').eq('user_id', userId)
         .gte('measurement_date', startDate.toISOString().split('T')[0])
         .lte('measurement_date', endDate.toISOString().split('T')[0]),

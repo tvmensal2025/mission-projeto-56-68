@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Relatório Semanal - Instituto dos Sonhos</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            text-align: center;
+            padding: 40px 20px;
+        }
+        
+        .header h1 {
+            margin: 0;
+            font-size: 2.5em;
+            font-weight: 300;
+        }
+        
+        .header p {
+            margin: 10px 0 0 0;
+            opacity: 0.9;
+            font-size: 1.1em;
+        }
+        
+        .controls {
+            padding: 30px;
+            background: #f8f9fa;
+            border-bottom: 1px solid #e9ecef;
+        }
+        
+        .button {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 15px 30px;
+            border-radius: 10px;
+            font-size: 16px;
+            cursor: pointer;
+            margin: 10px;
+            transition: transform 0.2s;
+        }
+        
+        .button:hover {
+            transform: translateY(-2px);
+        }
+        
+        .button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+        
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #666;
+        }
+        
+        .spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #667eea;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 20px;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .error {
+            background: #fee;
+            color: #c33;
+            padding: 20px;
+            border-radius: 10px;
+            margin: 20px;
+            text-align: center;
+        }
+        
+        .success {
+            background: #efe;
+            color: #363;
+            padding: 20px;
+            border-radius: 10px;
+            margin: 20px;
+            text-align: center;
+        }
+        
+        #reportContainer {
+            padding: 20px;
+        }
+        
+        .report-frame {
+            width: 100%;
+            min-height: 800px;
+            border: none;
+            border-radius: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🏥 Dr. Vita</h1>
+            <p>Relatório Semanal de Saúde - Instituto dos Sonhos</p>
+            <p>Visualize o relatório completo da Sirlene Correa</p>
+        </div>
+        
+        <div class="controls">
+            <button class="button" onclick="loadReport()" id="loadBtn">
+                📊 Carregar Relatório Completo
+            </button>
+            <button class="button" onclick="loadEmailVersion()" id="emailBtn">
+                📧 Versão Email
+            </button>
+            <button class="button" onclick="clearReport()" id="clearBtn">
+                🗑️ Limpar
+            </button>
+        </div>
+        
+        <div id="loading" class="loading" style="display: none;">
+            <div class="spinner"></div>
+            <p>Carregando relatório...</p>
+        </div>
+        
+        <div id="error" class="error" style="display: none;"></div>
+        <div id="success" class="success" style="display: none;"></div>
+        
+        <div id="reportContainer"></div>
+    </div>
+
+    <script>
+        const SUPABASE_URL = 'https://hlrkoyywjpckdotimtik.supabase.co';
+        const EDGE_FUNCTION_URL = `${SUPABASE_URL}/functions/v1/weekly-health-report`;
+        const ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhscmtveXl3anBja2RvdGltdGlrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTMxNTMwNDcsImV4cCI6MjA2ODcyOTA0N30.kYEtg1hYG2pmcyIeXRs-vgNIVOD76Yu7KPlyFN0vdUI';
+
+        function showLoading() {
+            document.getElementById('loading').style.display = 'block';
+            document.getElementById('error').style.display = 'none';
+            document.getElementById('success').style.display = 'none';
+            document.getElementById('reportContainer').innerHTML = '';
+        }
+
+        function hideLoading() {
+            document.getElementById('loading').style.display = 'none';
+        }
+
+        function showError(message) {
+            hideLoading();
+            const errorDiv = document.getElementById('error');
+            errorDiv.textContent = `❌ Erro: ${message}`;
+            errorDiv.style.display = 'block';
+        }
+
+        function showSuccess(message) {
+            hideLoading();
+            const successDiv = document.getElementById('success');
+            successDiv.textContent = `✅ ${message}`;
+            successDiv.style.display = 'block';
+        }
+
+        async function loadReport() {
+            try {
+                showLoading();
+                
+                const response = await fetch(EDGE_FUNCTION_URL, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${ANON_KEY}`
+                    },
+                    body: JSON.stringify({
+                        testMode: true,
+                        testEmail: 'tvmensal2025@gmail.com',
+                        testUserName: 'Sirlene Correa',
+                        returnHTML: true
+                    })
+                });
+
+                if (response.ok) {
+                    const htmlContent = await response.text();
+                    
+                    // Criar iframe para exibir o relatório
+                    const reportContainer = document.getElementById('reportContainer');
+                    reportContainer.innerHTML = `
+                        <iframe class="report-frame" srcdoc="${htmlContent.replace(/"/g, '&quot;')}"></iframe>
+                    `;
+                    
+                    showSuccess('Relatório carregado com sucesso!');
+                } else {
+                    const error = await response.json();
+                    showError(`Erro na requisição: ${error.error || 'Status ' + response.status}`);
+                }
+            } catch (error) {
+                showError(`Erro de conexão: ${error.message}`);
+            }
+        }
+
+        async function loadEmailVersion() {
+            try {
+                showLoading();
+                
+                const response = await fetch(EDGE_FUNCTION_URL, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${ANON_KEY}`
+                    },
+                    body: JSON.stringify({
+                        testMode: true,
+                        testEmail: 'tvmensal2025@gmail.com',
+                        testUserName: 'Sirlene Correa'
+                    })
+                });
+
+                if (response.ok) {
+                    const result = await response.json();
+                    showSuccess(`Email enviado para ${result.user.email}`);
+                } else {
+                    const error = await response.json();
+                    showError(`Erro na requisição: ${error.error || 'Status ' + response.status}`);
+                }
+            } catch (error) {
+                showError(`Erro de conexão: ${error.message}`);
+            }
+        }
+
+        function clearReport() {
+            document.getElementById('reportContainer').innerHTML = '';
+            document.getElementById('error').style.display = 'none';
+            document.getElementById('success').style.display = 'none';
+        }
+
+        // Carregar relatório automaticamente ao abrir a página
+        window.onload = function() {
+            loadReport();
+        };
+    </script>
+</body>
+</html>
+
+
+
+
+

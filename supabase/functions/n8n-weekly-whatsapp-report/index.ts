@@ -29,7 +29,7 @@ serve(async (req) => {
 
     // Buscar todos os usuários ativos com telefone
     const { data: users, error: usersError } = await supabase
-      .from('user_profiles')
+      .from('profiles')
       .select('user_id, full_name, phone')
       .not('phone', 'is', null);
 

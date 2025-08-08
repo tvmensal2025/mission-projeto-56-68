@@ -45,6 +45,7 @@ const DashboardPage = () => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       (event, session) => {
         setUser(session?.user ?? null);
+        setLoading(false); // evita travar no carregando em mudanças de auth
         if (!session) {
           navigate("/auth");
         }
@@ -55,8 +56,17 @@ const DashboardPage = () => {
   }, [navigate]);
 
   const handleLogout = async () => {
-    await supabase.auth.signOut();
-    navigate("/");
+    try {
+      await Promise.race([
+        supabase.auth.signOut(),
+        new Promise((resolve) => setTimeout(resolve, 1500))
+      ]);
+    } catch (e) {
+      console.warn('signOut falhou, navegando mesmo assim', e);
+    } finally {
+      setLoading(false);
+      navigate('/auth', { replace: true });
+    }
   };
 
   if (loading) {

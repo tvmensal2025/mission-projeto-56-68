@@ -9,6 +9,8 @@ const corsHeaders = {
 
 const openAIApiKey = Deno.env.get('OPENAI_API_KEY');
 const googleAIApiKey = Deno.env.get('GOOGLE_AI_API_KEY');
+// Flag para pausar/ativar GPT sem afetar outras funções
+const sofiaUseGpt = (Deno.env.get('SOFIA_USE_GPT') || 'true').toLowerCase() === 'true';
 
 // 📸 Função auxiliar para converter imagem URL em base64 (para precisão)
 async function fetchImageAsBase64(url: string): Promise<string> {
@@ -22,6 +24,134 @@ async function fetchImageAsBase64(url: string): Promise<string> {
     throw error;
   }
 }
+
+// 🍽️ COMBOS DE REFEIÇÕES BRASILEIRAS
+const COMBOS_REFEICOES: Record<string, {alimentos: string[], calorias: number, descricao: string}> = {
+  // Café da manhã
+  'cafe_completo': {
+    alimentos: ['pão francês', 'manteiga', 'café', 'leite'],
+    calorias: 350,
+    descricao: 'Café da manhã tradicional brasileiro'
+  },
+  'cafe_saudavel': {
+    alimentos: ['pão integral', 'queijo branco', 'suco de laranja', 'fruta'],
+    calorias: 280,
+    descricao: 'Café da manhã nutritivo'
+  },
+  'cafe_proteico': {
+    alimentos: ['ovos', 'pão integral', 'queijo', 'café'],
+    calorias: 420,
+    descricao: 'Café da manhã rico em proteínas'
+  },
+
+  // Almoço
+  'almoco_tradicional': {
+    alimentos: ['arroz', 'feijão', 'carne bovina', 'salada', 'farofa'],
+    calorias: 650,
+    descricao: 'Almoço tradicional brasileiro'
+  },
+  'almoco_saudavel': {
+    alimentos: ['arroz integral', 'feijão', 'frango grelhado', 'salada verde', 'legumes'],
+    calorias: 480,
+    descricao: 'Almoço nutritivo e balanceado'
+  },
+  'almoco_vegetariano': {
+    alimentos: ['arroz integral', 'feijão', 'legumes', 'salada', 'queijo'],
+    calorias: 420,
+    descricao: 'Almoço vegetariano nutritivo'
+  },
+  'almoco_executivo': {
+    alimentos: ['arroz', 'feijão', 'frango à parmegiana', 'batata frita', 'salada'],
+    calorias: 720,
+    descricao: 'Almoço executivo completo'
+  },
+
+  // Jantar
+  'jantar_leve': {
+    alimentos: ['sopa', 'salada', 'pão integral'],
+    calorias: 320,
+    descricao: 'Jantar leve e nutritivo'
+  },
+  'jantar_proteico': {
+    alimentos: ['peixe grelhado', 'legumes', 'arroz integral'],
+    calorias: 380,
+    descricao: 'Jantar rico em proteínas'
+  },
+  'jantar_vegetariano': {
+    alimentos: ['legumes', 'quinoa', 'salada', 'queijo'],
+    calorias: 350,
+    descricao: 'Jantar vegetariano'
+  },
+
+  // Lanches
+  'lanche_frutas': {
+    alimentos: ['fruta', 'iogurte', 'granola'],
+    calorias: 180,
+    descricao: 'Lanche com frutas'
+  },
+  'lanche_proteico': {
+    alimentos: ['queijo', 'pão integral', 'fruta'],
+    calorias: 220,
+    descricao: 'Lanche rico em proteínas'
+  },
+  'lanche_docinho': {
+    alimentos: ['bolo', 'café', 'leite'],
+    calorias: 280,
+    descricao: 'Lanche doce tradicional'
+  },
+
+  // Pratos específicos
+  'feijoada': {
+    alimentos: ['feijão preto', 'carne de porco', 'arroz', 'farofa', 'couve', 'laranja'],
+    calorias: 850,
+    descricao: 'Feijoada completa'
+  },
+  'churrasco': {
+    alimentos: ['carne bovina', 'frango', 'linguiça', 'arroz', 'farofa', 'salada'],
+    calorias: 920,
+    descricao: 'Churrasco brasileiro'
+  },
+  'moqueca': {
+    alimentos: ['peixe', 'camarão', 'arroz', 'farofa', 'salada'],
+    calorias: 680,
+    descricao: 'Moqueca de peixe'
+  },
+  'strogonoff': {
+    alimentos: ['frango', 'arroz', 'batata palha', 'salada'],
+    calorias: 580,
+    descricao: 'Strogonoff de frango'
+  },
+  'lasanha': {
+    alimentos: ['massa', 'queijo', 'molho de tomate', 'carne moída', 'salada'],
+    calorias: 720,
+    descricao: 'Lasanha tradicional'
+  },
+  'pizza': {
+    alimentos: ['massa', 'queijo', 'molho de tomate', 'presunto', 'azeitona'],
+    calorias: 650,
+    descricao: 'Pizza tradicional'
+  },
+  'hamburguer': {
+    alimentos: ['pão', 'carne bovina', 'queijo', 'alface', 'tomate', 'batata frita'],
+    calorias: 780,
+    descricao: 'Hambúrguer completo'
+  },
+  'sushi': {
+    alimentos: ['arroz', 'peixe', 'alga', 'wasabi', 'gengibre'],
+    calorias: 320,
+    descricao: 'Sushi japonês'
+  },
+  'salada_completa': {
+    alimentos: ['alface', 'tomate', 'cenoura', 'queijo', 'frango grelhado'],
+    calorias: 280,
+    descricao: 'Salada completa'
+  },
+  'sopa_nutritiva': {
+    alimentos: ['legumes', 'frango', 'macarrão', 'temperos'],
+    calorias: 220,
+    descricao: 'Sopa nutritiva'
+  }
+};
 
 // 🍽️ Base de conhecimento de porções brasileiras realistas
 const PORCOES_BRASILEIRAS: Record<string, number> = {
@@ -94,6 +224,43 @@ const PORCOES_BRASILEIRAS: Record<string, number> = {
   'açúcar': 10,
   'sal': 2
 };
+
+// 🔍 Função para detectar combos de refeições
+function detectComboRefeicao(foods: string[]): {combo: string, alimentos: string[], calorias: number, descricao: string} | null {
+  const normalizedFoods = foods.map(f => f.toLowerCase().trim());
+  
+  // Verificar cada combo
+  for (const [comboKey, comboData] of Object.entries(COMBOS_REFEICOES)) {
+    const comboAlimentos = comboData.alimentos.map(a => a.toLowerCase());
+    
+    // Contar quantos alimentos do combo estão presentes
+    let matches = 0;
+    const matchedFoods: string[] = [];
+    
+    for (const alimento of comboAlimentos) {
+      for (const detectedFood of normalizedFoods) {
+        if (detectedFood.includes(alimento) || alimento.includes(detectedFood)) {
+          matches++;
+          matchedFoods.push(alimento);
+          break;
+        }
+      }
+    }
+    
+    // Se pelo menos 70% dos alimentos do combo foram detectados
+    const matchPercentage = matches / comboAlimentos.length;
+    if (matchPercentage >= 0.7) {
+      return {
+        combo: comboKey,
+        alimentos: matchedFoods,
+        calorias: comboData.calorias,
+        descricao: comboData.descricao
+      };
+    }
+  }
+  
+  return null;
+}
 
 // 🔧 Função para remover duplicatas e aplicar estimativas realistas
 function removeDuplicatesAndEstimatePortions(foods: string[]): Array<{nome: string, quantidade: number}> {
@@ -281,8 +448,8 @@ REGRAS IMPORTANTES:
         isFood = false;
       }
 
-      // 🚀 ANÁLISE ADICIONAL COM OPENAI GPT-4O para maior precisão
-      if (isFood && openAIApiKey) {
+      // 🚀 ANÁLISE ADICIONAL COM OPENAI GPT-4O para maior precisão (controlado por flag)
+      if (isFood && openAIApiKey && sofiaUseGpt) {
         console.log('🧠 Chamando OpenAI GPT-4o para análise detalhada...');
         
         const openAIResponse = await fetch('https://api.openai.com/v1/chat/completions', {
@@ -384,8 +551,12 @@ Seja minucioso e identifique até pequenos detalhes como molhos, temperos e guar
         } else {
           console.log('⚠️ OpenAI indisponível, usando apenas Google AI');
         }
-      } else if (!openAIApiKey) {
-        console.log('⚠️ OpenAI API key não configurada, usando apenas Google AI');
+      } else if (!openAIApiKey || !sofiaUseGpt) {
+        if (!sofiaUseGpt) {
+          console.log('⏸️ GPT desativado por SOFIA_USE_GPT=false, usando apenas Google AI');
+        } else {
+          console.log('⚠️ OpenAI API key não configurada, usando apenas Google AI');
+        }
         
         // Aplicar remoção de duplicatas mesmo só com Google AI
         const allFoods = [...detectedFoods, ...detectedLiquids];
@@ -423,15 +594,31 @@ Ou você pode me contar o que está comendo! 😉✨`,
 
     console.log('✅ Comida detectada! Gerando análise nutricional...');
 
+    // 🍽️ Detectar combos de refeições
+    const allDetectedFoods = Array.isArray(detectedFoods) && detectedFoods.length > 0 && typeof detectedFoods[0] === 'object'
+      ? detectedFoods.map(food => food.nome)
+      : detectedFoods;
+    
+    const comboDetected = detectComboRefeicao(allDetectedFoods);
+    
     // 🍽️ Formatar lista de alimentos com quantidades realistas
-    const foodList = Array.isArray(detectedFoods) && detectedFoods.length > 0 && typeof detectedFoods[0] === 'object'
-      ? detectedFoods.map(food => `• ${food.nome} – ${food.quantidade}g`).join('\n')
-      : detectedFoods.map(food => `• ${food}`).join('\n');
+    let foodList = '';
+    let comboInfo = '';
+    
+    if (comboDetected) {
+      console.log('🎯 Combo detectado:', comboDetected);
+      comboInfo = `\n🍽️ **COMBO DETECTADO:** ${comboDetected.descricao}\n🔥 **Calorias estimadas:** ${comboDetected.calorias} kcal\n\n`;
+      foodList = comboDetected.alimentos.map(food => `• ${food}`).join('\n');
+    } else {
+      foodList = Array.isArray(detectedFoods) && detectedFoods.length > 0 && typeof detectedFoods[0] === 'object'
+        ? detectedFoods.map(food => `• ${food.nome} – ${food.quantidade}g`).join('\n')
+        : detectedFoods.map(food => `• ${food}`).join('\n');
+    }
 
     const finalMessage = `Oi ${actualUserName}! 😊 
 
 📸 Analisei sua refeição e identifiquei:
-${foodList}
+${comboInfo}${foodList}
 
 🤔 Esses alimentos estão corretos?`;
 

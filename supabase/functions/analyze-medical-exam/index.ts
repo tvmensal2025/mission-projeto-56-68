@@ -56,7 +56,7 @@ serve(async (req) => {
       { data: missions },
       { data: goals }
     ] = await Promise.all([
-      supabase.from('user_profiles').select('*').eq('user_id', userId).single(),
+      supabase.from('profiles').select('*').eq('user_id', userId).single(),
       supabase.from('weight_measurements').select('*').eq('user_id', userId).order('measurement_date', { ascending: false }).limit(10),
       supabase.from('health_diary').select('*').eq('user_id', userId).order('date', { ascending: false }).limit(7),
       supabase.from('daily_mission_sessions').select('*').eq('user_id', userId).eq('is_completed', true).order('date', { ascending: false }).limit(10),

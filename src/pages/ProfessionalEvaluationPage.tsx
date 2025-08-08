@@ -37,6 +37,10 @@ import { supabase } from '@/integrations/supabase/client';
 import { motion } from 'framer-motion';
 import { useProfessionalEvaluation } from '@/hooks/useProfessionalEvaluation';
 import { EvaluationComparison } from '@/components/charts/EvaluationComparison';
+import MuscleCompositionPanel from '@/components/charts/MuscleCompositionPanel';
+import RiskGauge from '@/components/charts/RiskGauge';
+import CompositionDonut from '@/components/charts/CompositionDonut';
+import NewEvaluationWizard from '@/components/evaluation/NewEvaluationWizard';
 import { exportEvaluationToPDF } from '@/utils/exportEvaluationPDF';
 import { useNavigate } from 'react-router-dom';
 
@@ -932,6 +936,47 @@ const ProfessionalEvaluationPage: React.FC = () => {
               Avaliações disponíveis no período {timeRange === 'week' ? 'semanal' : timeRange === 'month' ? 'mensal' : 'trimestral'}: {getFilteredEvaluations().length}
             </p>
           </div>
+        </div>
+      )}
+
+      {/* Primeiro uso: wizard de avaliação basal quando não há avaliações */}
+      {selectedUser && getFilteredEvaluations().length === 0 && (
+        <div className="max-w-7xl mx-auto p-6">
+          <div className="mb-4 rounded-lg bg-green-600/10 p-4 text-sm text-green-300">
+            Nenhuma avaliação encontrada. Inicie a avaliação basal usando os dados do cadastro.
+          </div>
+          <NewEvaluationWizard
+            user={selectedUser}
+            calculateMetrics={(u, m) => calculateMetricsFromHook(u as any, m as any) as any}
+            onPreview={() => {}}
+            onSave={async (ev) => { await saveEvaluation(ev as any); await loadUserEvaluations(selectedUser.id); }}
+          />
+        </div>
+      )}
+
+      {/* Painel escuro e gráficos chave quando houver pelo menos uma avaliação */}
+      {selectedUser && getFilteredEvaluations().length > 0 && (
+        <div className="max-w-7xl mx-auto p-6 space-y-6">
+          <MuscleCompositionPanel
+            evaluations={getFilteredEvaluations()}
+            currentEvaluation={selectedEvaluation || undefined}
+          />
+          {(selectedEvaluation || getFilteredEvaluations()[0]) && (
+            <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+              {(() => { const ev = (selectedEvaluation || getFilteredEvaluations()[0])!; return (
+                <RiskGauge
+                  riskLevel={(ev.risk_level as any) || 'moderate'}
+                  bodyFatPercentage={ev.body_fat_percentage || 0}
+                  waistToHeightRatio={ev.waist_to_height_ratio}
+                /> ); })()}
+              {(() => { const ev = (selectedEvaluation || getFilteredEvaluations()[0])!; return (
+                <CompositionDonut
+                  weightKg={ev.weight_kg}
+                  fatMassKg={ev.fat_mass_kg || 0}
+                  leanMassKg={ev.lean_mass_kg || 0}
+                /> ); })()}
+            </div>
+          )}
         </div>
       )}
 

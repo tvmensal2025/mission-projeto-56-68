@@ -47,7 +47,7 @@ serve(async (req) => {
       { data: healthDiary },
       { data: missions }
     ] = await Promise.all([
-      supabase.from('user_profiles').select('*').eq('user_id', userId).single(),
+      supabase.from('profiles').select('*').eq('user_id', userId).single(),
       supabase.from('weight_measurements').select('*').eq('user_id', userId).gte('measurement_date', startDate.toISOString().split('T')[0]).order('measurement_date', { ascending: false }),
       supabase.from('bioimpedance_analysis').select('*').eq('user_id', userId).gte('created_at', startDate.toISOString()).order('created_at', { ascending: false }),
       supabase.from('chat_conversations').select('*').eq('user_id', userId).gte('created_at', startDate.toISOString()),

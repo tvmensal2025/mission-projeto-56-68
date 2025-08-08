@@ -6,8 +6,8 @@ import { useToast } from '@/hooks/use-toast';
 import { useUserProfile } from '@/hooks/useUserProfile';
 import { 
   Home, Activity, GraduationCap, FileText, Users, Target, 
-  Award, Settings, TrendingUp, Stethoscope, CreditCard, 
-  Menu, LogOut, ChevronLeft, ChevronRight
+  Award, Settings, TrendingUp, Stethoscope, CreditCard, Utensils,
+  Menu, LogOut, ChevronLeft, ChevronRight, User as UserIcon
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
@@ -26,12 +26,12 @@ import DesafiosSection from '@/components/dashboard/DesafiosSection';
 import HealthFeedPage from '@/pages/HealthFeedPage';
 import PaymentPlans from '@/components/PaymentPlans';
 import UserDrVitalPage from '@/pages/UserDrVitalPage';
+import SofiaNutricionalPage from '@/pages/SofiaNutricionalPage';
 import { UserProfile } from '@/components/UserProfile';
 import DebugDataVerification from '@/components/DebugDataVerification';
 import MyProgress from '@/components/MyProgress';
 import SaboteurTest from '@/components/SaboteurTest';
-import { getUserAvatar } from "@/lib/avatar-utils";
-import { AvatarUpload } from "@/components/ui/avatar-upload";
+// Removido avatar roxo com upload; vamos usar o mesmo estilo do avatar do menu
 import { UserProfileSidebar } from "@/components/ui/user-profile-sidebar";
 import LockedMenuItem from '@/components/LockedMenuItem';
 import LockedSection from '@/components/LockedSection';
@@ -48,6 +48,7 @@ type DashboardSection =
   | 'saboteur-test'
   | 'progress'
   | 'subscriptions'
+  | 'sofia-nutricional'
   | 'dr-vital'
   | 'apps'
   | 'help'
@@ -82,6 +83,7 @@ const CompleteDashboardPage = () => {
       (event, session) => {
         setSession(session);
         setUser(session?.user ?? null);
+        setLoading(false); // garante que não fique preso no loader em mudanças de auth
         if (!session) {
           navigate("/auth");
         }
@@ -91,9 +93,26 @@ const CompleteDashboardPage = () => {
     return () => subscription.unsubscribe();
   }, [navigate]);
 
+  // Fallback adicional: se por algum motivo o estado "loading" persistir, force a saída após 3s
+  useEffect(() => {
+    if (!loading) return;
+    const id = window.setTimeout(() => setLoading(false), 3000);
+    return () => window.clearTimeout(id);
+  }, [loading]);
+
   const handleLogout = async () => {
-    await supabase.auth.signOut();
-    navigate("/");
+    try {
+      // não travar se o signOut demorar
+      await Promise.race([
+        supabase.auth.signOut(),
+        new Promise((resolve) => setTimeout(resolve, 1500)),
+      ]);
+    } catch (e) {
+      console.warn('signOut falhou, navegando mesmo assim', e);
+    } finally {
+      setLoading(false);
+      navigate('/auth', { replace: true });
+    }
   };
 
   const menuItems = [
@@ -106,6 +125,8 @@ const CompleteDashboardPage = () => {
     { id: 'comunidade', icon: Users, label: 'Comunidade', color: 'text-blue-500' },
     { id: 'challenges', icon: Award, label: 'Desafios Individuais', color: 'text-orange-500' },
     { id: 'saboteur-test', icon: Settings, label: 'Teste de Sabotadores', color: 'text-gray-500' },
+    // Novo item: acima do Dr. Vital
+    { id: 'sofia-nutricional', icon: Utensils, label: 'Sofia Nutricional', color: 'text-emerald-600' },
     { id: 'dr-vital', icon: Stethoscope, label: 'Dr. Vital', color: 'text-blue-600' },
     { id: 'subscriptions', icon: CreditCard, label: 'Assinaturas', color: 'text-purple-600' },
   ];
@@ -117,52 +138,24 @@ const CompleteDashboardPage = () => {
       case 'missions':
         return <DailyMissions user={user} />;
       case 'courses':
-        return (
-          <LockedSection
-            title="Plataforma dos Sonhos"
-            description="Nossa plataforma de cursos exclusiva estará disponível em breve! Prepare-se para uma experiência de aprendizado única."
-            showPreview={false}
-          />
-        );
+        return <CoursePlatformNetflix />;
       case 'progress':
         return <MyProgress />;
       case 'saboteur-test':
         return <SaboteurTest />;
       case 'sessions':
-        return (
-          <LockedSection
-            title="Sessões Personalizadas"
-            description="Sessões exclusivas com nossos especialistas estarão disponíveis em breve! Aguarde por uma experiência personalizada única."
-            showPreview={false}
-          />
-        );
+        return <SessionsPage user={user} />;
       case 'goals':
         return <GoalsPage />;
       case 'challenges':
-        return (
-          <LockedSection
-            title="Desafios Individuais"
-            description="Desafios personalizados e gamificação avançada estarão disponíveis em breve! Prepare-se para conquistar seus objetivos de forma divertida."
-            showPreview={false}
-          />
-        );
+        return <DesafiosSection user={user} />;
 
       case 'comunidade':
-        return (
-          <LockedSection
-            title="Comunidade dos Sonhos"
-            description="Nossa comunidade exclusiva estará disponível em breve! Conecte-se com outros membros e compartilhe sua jornada de transformação."
-            showPreview={false}
-          />
-        );
+        return <HealthFeedPage />;
       case 'subscriptions':
-        return (
-          <LockedSection
-            title="Gestão de Assinaturas"
-            description="Sistema completo de assinaturas e planos premium estará disponível em breve! Acesso exclusivo a funcionalidades avançadas."
-            showPreview={false}
-          />
-        );
+        return <PaymentPlans />;
+      case 'sofia-nutricional':
+        return <SofiaNutricionalPage />;
       case 'dr-vital':
         return <UserDrVitalPage />;
       case 'profile':
@@ -205,7 +198,7 @@ const CompleteDashboardPage = () => {
         {/* Header com Menu - só mostra botão de expansão no desktop */}
         {!isMobile && (
           <div className="p-4 border-b border-border/10">
-            <div className="flex items-center gap-3">
+            <div className="flex items-center justify-between gap-3">
               <Button 
                 variant="ghost" 
                 size="sm"
@@ -214,9 +207,11 @@ const CompleteDashboardPage = () => {
               >
                 <Menu className="h-5 w-5" />
               </Button>
-              {sidebarExpanded && (
-                <span className="text-sm font-medium text-foreground">Menu</span>
-              )}
+              <div className="flex items-center">
+                {sidebarExpanded && (
+                  <span className="text-sm font-medium text-foreground">Menu</span>
+                )}
+              </div>
             </div>
           </div>
         )}
@@ -228,34 +223,39 @@ const CompleteDashboardPage = () => {
           </div>
         )}
 
-        {/* Perfil do Usuário */}
+        {/* Perfil do Usuário - usando o mesmo estilo do avatar do menu, porém grande */}
         {!profileLoading && (
           <div className="p-4 border-b border-border/10">
-            <Sheet>
-              <SheetTrigger asChild>
-                <Button variant="ghost" className="w-full p-0 h-auto hover:bg-accent/30 transition-smooth">
-                  <div className="flex flex-col items-center gap-3">
+            <Button
+              variant="ghost"
+              className="w-full p-0 h-auto hover:bg-accent/30 transition-smooth"
+              onClick={() => setActiveSection('profile')}
+            >
+              <div className="flex flex-col items-center gap-3">
                     <div className="relative">
-                      {(() => {
-                        const avatarData = getUserAvatar(profileData.avatarUrl, profileData.fullName || user?.email || 'User');
-                        return (
-                          <AvatarUpload
-                            currentAvatar={profileData.avatarUrl}
-                            userName={profileData.fullName || user?.email || 'User'}
-                            size={isExpanded ? 'xl' : 'lg'}
-                            onAvatarUpdate={async (newAvatarUrl) => {
-                              // Recarregar perfil após atualização do avatar
-                              await loadProfile();
-                            }}
-                            className="transition-all duration-200"
-                          />
-                        );
-                      })()}
+                      <Avatar className={`${isExpanded ? 'h-32 w-32' : 'h-20 w-20'} ring-2 ring-primary/30 transition-all duration-200`}>
+                        <AvatarImage src={profileData.avatarUrl || undefined} alt={profileData.fullName || user?.email || 'User'} />
+                        <AvatarFallback>{(profileData.fullName || user?.email || 'U').slice(0,1).toUpperCase()}</AvatarFallback>
+                      </Avatar>
+                      {/* Botão de atalho para Perfil sobre a foto */}
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          setActiveSection('profile');
+                        }}
+                        className={`${isExpanded ? 'p-1.5' : 'p-1'} absolute top-1 right-1 rounded-full border border-border/40 bg-background/80 hover:bg-accent transition-colors shadow-sm`}
+                        aria-label="Abrir Perfil"
+                        title="Perfil"
+                      >
+                        <UserIcon className={`${isExpanded ? 'h-4 w-4' : 'h-3.5 w-3.5'} text-foreground/80`} />
+                      </button>
                       <div className={`absolute ${isExpanded ? '-bottom-1 -right-1 w-5 h-5' : '-bottom-0.5 -right-0.5 w-4 h-4'} bg-green-500 rounded-full border-2 border-background`}>
                         {isExpanded && <div className="w-2 h-2 bg-white rounded-full absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2"></div>}
                       </div>
                     </div>
-                    
+
                     {isExpanded && (
                       <div className="text-center">
                         <p className="text-sm font-semibold text-foreground truncate max-w-[150px] sm:max-w-[200px]">
@@ -269,22 +269,8 @@ const CompleteDashboardPage = () => {
                         </Badge>
                       </div>
                     )}
-                  </div>
-                </Button>
-              </SheetTrigger>
-              <SheetContent side="right" className="w-96 p-0">
-                <UserProfileSidebar 
-                  user={user} 
-                  onUpdateProfile={(data) => {
-                    console.log('Perfil atualizado:', data);
-                    toast({
-                      title: "Perfil atualizado!",
-                      description: "Suas informações foram salvas com sucesso.",
-                    });
-                  }}
-                />
-              </SheetContent>
-            </Sheet>
+              </div>
+            </Button>
           </div>
         )}
         
@@ -314,11 +300,13 @@ const CompleteDashboardPage = () => {
                       setActiveSection(item.id as DashboardSection);
                       setSidebarOpen(false);
                     }}
-                    className={`${isExpanded ? 'justify-start' : 'justify-center'} gap-3 h-12 ${
-                      activeSection === item.id ? 'bg-muted font-medium' : ''
+                    className={`${isExpanded ? 'justify-start' : 'justify-center'} gap-3 h-12 transition-colors ${
+                      activeSection === item.id
+                        ? 'bg-primary/15 border border-primary/30 text-foreground font-medium'
+                        : 'hover:bg-accent/40'
                     }`}
                   >
-                    <Icon className={`h-7 w-7 ${item.color}`} />
+                    <Icon className={`h-7 w-7 ${activeSection === item.id ? 'text-primary' : item.color}`} />
                     {isExpanded && <span className="text-left text-base">{item.label}</span>}
                   </LockedMenuItem>
                 );
@@ -329,15 +317,17 @@ const CompleteDashboardPage = () => {
                 <Button
                   key={item.id}
                   variant={activeSection === item.id ? "secondary" : "ghost"}
-                  className={`w-full ${isExpanded ? 'justify-start' : 'justify-center'} gap-3 h-12 ${
-                    activeSection === item.id ? 'bg-muted font-medium' : ''
+                  className={`w-full ${isExpanded ? 'justify-start' : 'justify-center'} gap-3 h-12 transition-colors ${
+                    activeSection === item.id
+                      ? 'bg-primary/15 border border-primary/30 text-foreground font-medium'
+                      : 'hover:bg-accent/40'
                   }`}
                   onClick={() => {
                     setActiveSection(item.id as DashboardSection);
                     setSidebarOpen(false);
                   }}
                 >
-                  <Icon className={`h-7 w-7 ${item.color}`} />
+                  <Icon className={`h-7 w-7 ${activeSection === item.id ? 'text-primary' : item.color}`} />
                   {isExpanded && <span className="text-left text-base">{item.label}</span>}
                 </Button>
               );
