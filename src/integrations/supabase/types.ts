@@ -2636,6 +2636,139 @@ export type Database = {
           },
         ]
       }
+      nutrition_aliases: {
+        Row: {
+          alias_normalized: string
+          created_at: string
+          food_id: string
+          id: string
+        }
+        Insert: {
+          alias_normalized: string
+          created_at?: string
+          food_id: string
+          id?: string
+        }
+        Update: {
+          alias_normalized?: string
+          created_at?: string
+          food_id?: string
+          id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "nutrition_aliases_food_id_fkey"
+            columns: ["food_id"]
+            isOneToOne: false
+            referencedRelation: "nutrition_foods"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      nutrition_foods: {
+        Row: {
+          canonical_name: string
+          canonical_name_normalized: string
+          carbs_g: number
+          created_at: string
+          density_g_ml: number | null
+          edible_portion_factor: number | null
+          fat_g: number
+          fiber_g: number
+          id: string
+          is_recipe: boolean
+          kcal: number
+          locale: string
+          oil_absorption_factor: number | null
+          protein_g: number
+          sodium_mg: number
+          source: string
+          source_ref: string | null
+          state: string
+          unit_basis: string
+          updated_at: string
+        }
+        Insert: {
+          canonical_name: string
+          canonical_name_normalized: string
+          carbs_g: number
+          created_at?: string
+          density_g_ml?: number | null
+          edible_portion_factor?: number | null
+          fat_g: number
+          fiber_g?: number
+          id?: string
+          is_recipe?: boolean
+          kcal: number
+          locale?: string
+          oil_absorption_factor?: number | null
+          protein_g: number
+          sodium_mg?: number
+          source: string
+          source_ref?: string | null
+          state?: string
+          unit_basis?: string
+          updated_at?: string
+        }
+        Update: {
+          canonical_name?: string
+          canonical_name_normalized?: string
+          carbs_g?: number
+          created_at?: string
+          density_g_ml?: number | null
+          edible_portion_factor?: number | null
+          fat_g?: number
+          fiber_g?: number
+          id?: string
+          is_recipe?: boolean
+          kcal?: number
+          locale?: string
+          oil_absorption_factor?: number | null
+          protein_g?: number
+          sodium_mg?: number
+          source?: string
+          source_ref?: string | null
+          state?: string
+          unit_basis?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      nutrition_yields: {
+        Row: {
+          created_at: string
+          factor: number
+          food_id: string
+          from_state: string
+          id: string
+          to_state: string
+        }
+        Insert: {
+          created_at?: string
+          factor: number
+          food_id: string
+          from_state: string
+          id?: string
+          to_state: string
+        }
+        Update: {
+          created_at?: string
+          factor?: number
+          food_id?: string
+          from_state?: string
+          id?: string
+          to_state?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "nutrition_yields_food_id_fkey"
+            columns: ["food_id"]
+            isOneToOne: false
+            referencedRelation: "nutrition_foods"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       preparo_conservacao: {
         Row: {
           alimento_id: number | null
@@ -3141,6 +3274,45 @@ export type Database = {
           tempo_preparo?: number | null
         }
         Relationships: []
+      }
+      recipe_items: {
+        Row: {
+          created_at: string
+          grams: number
+          id: string
+          ingredient_food_id: string
+          recipe_id: string
+        }
+        Insert: {
+          created_at?: string
+          grams: number
+          id?: string
+          ingredient_food_id: string
+          recipe_id: string
+        }
+        Update: {
+          created_at?: string
+          grams?: number
+          id?: string
+          ingredient_food_id?: string
+          recipe_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "recipe_items_ingredient_food_id_fkey"
+            columns: ["ingredient_food_id"]
+            isOneToOne: false
+            referencedRelation: "nutrition_foods"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "recipe_items_recipe_id_fkey"
+            columns: ["recipe_id"]
+            isOneToOne: false
+            referencedRelation: "nutrition_foods"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       saboteur_assessments: {
         Row: {
