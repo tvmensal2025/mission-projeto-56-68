@@ -292,6 +292,293 @@ export type Database = {
         }
         Relationships: []
       }
+      alimentos_alias: {
+        Row: {
+          alias_norm: string
+          alimento_id: number
+          created_at: string
+          id: number
+        }
+        Insert: {
+          alias_norm: string
+          alimento_id: number
+          created_at?: string
+          id?: number
+        }
+        Update: {
+          alias_norm?: string
+          alimento_id?: number
+          created_at?: string
+          id?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "alimentos_alias_alimento_id_fkey"
+            columns: ["alimento_id"]
+            isOneToOne: false
+            referencedRelation: "alimentos_completos"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      alimentos_completos: {
+        Row: {
+          categoria: string
+          contraindicacoes: string | null
+          created_at: string | null
+          culinarias: string | null
+          disponibilidade: string | null
+          dosagem_terapeutica: string | null
+          forma_preparo_medicinal: string | null
+          id: number
+          indicacoes_terapeuticas: string[] | null
+          interacoes_medicamentosas: string[] | null
+          nome: string
+          nome_cientifico: string | null
+          nome_ingles: string | null
+          origem: string | null
+          principios_ativos: string[] | null
+          propriedades_medicinais: string | null
+          regiao_origem: string | null
+          sazonalidade: string | null
+          subcategoria: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          categoria: string
+          contraindicacoes?: string | null
+          created_at?: string | null
+          culinarias?: string | null
+          disponibilidade?: string | null
+          dosagem_terapeutica?: string | null
+          forma_preparo_medicinal?: string | null
+          id?: number
+          indicacoes_terapeuticas?: string[] | null
+          interacoes_medicamentosas?: string[] | null
+          nome: string
+          nome_cientifico?: string | null
+          nome_ingles?: string | null
+          origem?: string | null
+          principios_ativos?: string[] | null
+          propriedades_medicinais?: string | null
+          regiao_origem?: string | null
+          sazonalidade?: string | null
+          subcategoria?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          categoria?: string
+          contraindicacoes?: string | null
+          created_at?: string | null
+          culinarias?: string | null
+          disponibilidade?: string | null
+          dosagem_terapeutica?: string | null
+          forma_preparo_medicinal?: string | null
+          id?: number
+          indicacoes_terapeuticas?: string[] | null
+          interacoes_medicamentosas?: string[] | null
+          nome?: string
+          nome_cientifico?: string | null
+          nome_ingles?: string | null
+          origem?: string | null
+          principios_ativos?: string[] | null
+          propriedades_medicinais?: string | null
+          regiao_origem?: string | null
+          sazonalidade?: string | null
+          subcategoria?: string | null
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
+      alimentos_densidades: {
+        Row: {
+          alimento_id: number
+          densidade_g_ml: number
+        }
+        Insert: {
+          alimento_id: number
+          densidade_g_ml: number
+        }
+        Update: {
+          alimento_id?: number
+          densidade_g_ml?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "alimentos_densidades_alimento_id_fkey"
+            columns: ["alimento_id"]
+            isOneToOne: true
+            referencedRelation: "alimentos_completos"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      alimentos_doencas: {
+        Row: {
+          alimento_id: number | null
+          contraindicacoes: string | null
+          created_at: string | null
+          doenca_id: number | null
+          dosagem_recomendada: string | null
+          evidencia_cientifica: string | null
+          forma_preparo_otima: string | null
+          frequencia_consumo: string | null
+          id: number
+          interacoes: string | null
+          mecanismo_acao: string | null
+          nivel_evidencia: number | null
+          tipo_relacao: string | null
+        }
+        Insert: {
+          alimento_id?: number | null
+          contraindicacoes?: string | null
+          created_at?: string | null
+          doenca_id?: number | null
+          dosagem_recomendada?: string | null
+          evidencia_cientifica?: string | null
+          forma_preparo_otima?: string | null
+          frequencia_consumo?: string | null
+          id?: number
+          interacoes?: string | null
+          mecanismo_acao?: string | null
+          nivel_evidencia?: number | null
+          tipo_relacao?: string | null
+        }
+        Update: {
+          alimento_id?: number | null
+          contraindicacoes?: string | null
+          created_at?: string | null
+          doenca_id?: number | null
+          dosagem_recomendada?: string | null
+          evidencia_cientifica?: string | null
+          forma_preparo_otima?: string | null
+          frequencia_consumo?: string | null
+          id?: number
+          interacoes?: string | null
+          mecanismo_acao?: string | null
+          nivel_evidencia?: number | null
+          tipo_relacao?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "alimentos_doencas_alimento_id_fkey"
+            columns: ["alimento_id"]
+            isOneToOne: false
+            referencedRelation: "alimentos_completos"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "alimentos_doencas_doenca_id_fkey"
+            columns: ["doenca_id"]
+            isOneToOne: false
+            referencedRelation: "doencas_condicoes"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      alimentos_epf: {
+        Row: {
+          alimento_id: number
+          epf: number
+        }
+        Insert: {
+          alimento_id: number
+          epf: number
+        }
+        Update: {
+          alimento_id?: number
+          epf?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "alimentos_epf_alimento_id_fkey"
+            columns: ["alimento_id"]
+            isOneToOne: true
+            referencedRelation: "alimentos_completos"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      alimentos_principios_ativos: {
+        Row: {
+          alimento_id: number | null
+          biodisponibilidade: string | null
+          concentracao: number | null
+          created_at: string | null
+          estabilidade: string | null
+          forma_quimica: string | null
+          id: number
+          principio_ativo_id: number | null
+        }
+        Insert: {
+          alimento_id?: number | null
+          biodisponibilidade?: string | null
+          concentracao?: number | null
+          created_at?: string | null
+          estabilidade?: string | null
+          forma_quimica?: string | null
+          id?: number
+          principio_ativo_id?: number | null
+        }
+        Update: {
+          alimento_id?: number | null
+          biodisponibilidade?: string | null
+          concentracao?: number | null
+          created_at?: string | null
+          estabilidade?: string | null
+          forma_quimica?: string | null
+          id?: number
+          principio_ativo_id?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "alimentos_principios_ativos_alimento_id_fkey"
+            columns: ["alimento_id"]
+            isOneToOne: false
+            referencedRelation: "alimentos_completos"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "alimentos_principios_ativos_principio_ativo_id_fkey"
+            columns: ["principio_ativo_id"]
+            isOneToOne: false
+            referencedRelation: "principios_ativos"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      alimentos_yield: {
+        Row: {
+          alimento_id: number
+          factor: number
+          from_state: string
+          id: number
+          to_state: string
+        }
+        Insert: {
+          alimento_id: number
+          factor: number
+          from_state: string
+          id?: number
+          to_state: string
+        }
+        Update: {
+          alimento_id?: number
+          factor?: number
+          from_state?: string
+          id?: number
+          to_state?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "alimentos_yield_alimento_id_fkey"
+            columns: ["alimento_id"]
+            isOneToOne: false
+            referencedRelation: "alimentos_completos"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       assessments: {
         Row: {
           challenges_faced: string | null
@@ -639,6 +926,66 @@ export type Database = {
             columns: ["alimento2_id"]
             isOneToOne: false
             referencedRelation: "alimentos"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      combinacoes_terapeuticas: {
+        Row: {
+          alimento1_id: number | null
+          alimento2_id: number | null
+          beneficio_sinergia: string | null
+          contraindicacoes: string | null
+          created_at: string | null
+          dosagem_recomendada: string | null
+          evidencia_cientifica: string | null
+          forma_preparo: string | null
+          id: number
+          mecanismo_sinergia: string | null
+          nivel_evidencia: number | null
+          nome_combinacao: string | null
+        }
+        Insert: {
+          alimento1_id?: number | null
+          alimento2_id?: number | null
+          beneficio_sinergia?: string | null
+          contraindicacoes?: string | null
+          created_at?: string | null
+          dosagem_recomendada?: string | null
+          evidencia_cientifica?: string | null
+          forma_preparo?: string | null
+          id?: number
+          mecanismo_sinergia?: string | null
+          nivel_evidencia?: number | null
+          nome_combinacao?: string | null
+        }
+        Update: {
+          alimento1_id?: number | null
+          alimento2_id?: number | null
+          beneficio_sinergia?: string | null
+          contraindicacoes?: string | null
+          created_at?: string | null
+          dosagem_recomendada?: string | null
+          evidencia_cientifica?: string | null
+          forma_preparo?: string | null
+          id?: number
+          mecanismo_sinergia?: string | null
+          nivel_evidencia?: number | null
+          nome_combinacao?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "combinacoes_terapeuticas_alimento1_id_fkey"
+            columns: ["alimento1_id"]
+            isOneToOne: false
+            referencedRelation: "alimentos_completos"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "combinacoes_terapeuticas_alimento2_id_fkey"
+            columns: ["alimento2_id"]
+            isOneToOne: false
+            referencedRelation: "alimentos_completos"
             referencedColumns: ["id"]
           },
         ]
@@ -1228,6 +1575,63 @@ export type Database = {
           sync_type?: string
           synced_at?: string | null
           user_id?: string | null
+        }
+        Relationships: []
+      }
+      doencas_condicoes: {
+        Row: {
+          abordagem_nutricional: string | null
+          alimentos_beneficos: string[] | null
+          alimentos_evitar: string[] | null
+          categoria: string | null
+          causas: string[] | null
+          complicacoes: string[] | null
+          created_at: string | null
+          descricao: string | null
+          estilo_vida: string[] | null
+          exames_diagnostico: string[] | null
+          fatores_risco: string[] | null
+          id: number
+          nome: string
+          sintomas: string[] | null
+          suplementos_recomendados: string[] | null
+          tratamentos_convencionais: string[] | null
+        }
+        Insert: {
+          abordagem_nutricional?: string | null
+          alimentos_beneficos?: string[] | null
+          alimentos_evitar?: string[] | null
+          categoria?: string | null
+          causas?: string[] | null
+          complicacoes?: string[] | null
+          created_at?: string | null
+          descricao?: string | null
+          estilo_vida?: string[] | null
+          exames_diagnostico?: string[] | null
+          fatores_risco?: string[] | null
+          id?: number
+          nome: string
+          sintomas?: string[] | null
+          suplementos_recomendados?: string[] | null
+          tratamentos_convencionais?: string[] | null
+        }
+        Update: {
+          abordagem_nutricional?: string | null
+          alimentos_beneficos?: string[] | null
+          alimentos_evitar?: string[] | null
+          categoria?: string | null
+          causas?: string[] | null
+          complicacoes?: string[] | null
+          created_at?: string | null
+          descricao?: string | null
+          estilo_vida?: string[] | null
+          exames_diagnostico?: string[] | null
+          fatores_risco?: string[] | null
+          id?: number
+          nome?: string
+          sintomas?: string[] | null
+          suplementos_recomendados?: string[] | null
+          tratamentos_convencionais?: string[] | null
         }
         Relationships: []
       }
@@ -2321,6 +2725,51 @@ export type Database = {
         }
         Relationships: []
       }
+      principios_ativos: {
+        Row: {
+          beneficios_terapeuticos: string[] | null
+          categoria: string | null
+          created_at: string | null
+          descricao: string | null
+          dosagem_segura: string | null
+          efeitos_colaterais: string[] | null
+          evidencia_cientifica: string | null
+          id: number
+          interacoes_medicamentosas: string[] | null
+          mecanismo_acao: string | null
+          nivel_evidencia: number | null
+          nome: string
+        }
+        Insert: {
+          beneficios_terapeuticos?: string[] | null
+          categoria?: string | null
+          created_at?: string | null
+          descricao?: string | null
+          dosagem_segura?: string | null
+          efeitos_colaterais?: string[] | null
+          evidencia_cientifica?: string | null
+          id?: number
+          interacoes_medicamentosas?: string[] | null
+          mecanismo_acao?: string | null
+          nivel_evidencia?: number | null
+          nome: string
+        }
+        Update: {
+          beneficios_terapeuticos?: string[] | null
+          categoria?: string | null
+          created_at?: string | null
+          descricao?: string | null
+          dosagem_segura?: string | null
+          efeitos_colaterais?: string[] | null
+          evidencia_cientifica?: string | null
+          id?: number
+          interacoes_medicamentosas?: string[] | null
+          mecanismo_acao?: string | null
+          nivel_evidencia?: number | null
+          nome?: string
+        }
+        Relationships: []
+      }
       professional_evaluations: {
         Row: {
           abdominal_circumference_cm: number
@@ -2434,6 +2883,7 @@ export type Database = {
       }
       profiles: {
         Row: {
+          achievements: string[] | null
           activity_level: string | null
           address: string | null
           admin_level: string | null
@@ -2448,6 +2898,7 @@ export type Database = {
           email: string | null
           full_name: string | null
           gender: string | null
+          goals: string[] | null
           height: number | null
           height_cm: number | null
           id: string
@@ -2467,6 +2918,7 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          achievements?: string[] | null
           activity_level?: string | null
           address?: string | null
           admin_level?: string | null
@@ -2481,6 +2933,7 @@ export type Database = {
           email?: string | null
           full_name?: string | null
           gender?: string | null
+          goals?: string[] | null
           height?: number | null
           height_cm?: number | null
           id?: string
@@ -2500,6 +2953,7 @@ export type Database = {
           user_id: string
         }
         Update: {
+          achievements?: string[] | null
           activity_level?: string | null
           address?: string | null
           admin_level?: string | null
@@ -2514,6 +2968,7 @@ export type Database = {
           email?: string | null
           full_name?: string | null
           gender?: string | null
+          goals?: string[] | null
           height?: number | null
           height_cm?: number | null
           id?: string
@@ -2531,6 +2986,159 @@ export type Database = {
           timezone?: string | null
           updated_at?: string
           user_id?: string
+        }
+        Relationships: []
+      }
+      protocolos_nutricionais: {
+        Row: {
+          alimentos_evitar: string[] | null
+          contraindicacoes: string | null
+          created_at: string | null
+          descricao: string | null
+          duracao: string | null
+          estilo_vida: string[] | null
+          evidencia_cientifica: string | null
+          fase1_alimentos: string[] | null
+          fase2_alimentos: string[] | null
+          fase3_alimentos: string[] | null
+          id: number
+          nivel_evidencia: number | null
+          nome: string
+          objetivo: string | null
+          suplementos_recomendados: string[] | null
+        }
+        Insert: {
+          alimentos_evitar?: string[] | null
+          contraindicacoes?: string | null
+          created_at?: string | null
+          descricao?: string | null
+          duracao?: string | null
+          estilo_vida?: string[] | null
+          evidencia_cientifica?: string | null
+          fase1_alimentos?: string[] | null
+          fase2_alimentos?: string[] | null
+          fase3_alimentos?: string[] | null
+          id?: number
+          nivel_evidencia?: number | null
+          nome: string
+          objetivo?: string | null
+          suplementos_recomendados?: string[] | null
+        }
+        Update: {
+          alimentos_evitar?: string[] | null
+          contraindicacoes?: string | null
+          created_at?: string | null
+          descricao?: string | null
+          duracao?: string | null
+          estilo_vida?: string[] | null
+          evidencia_cientifica?: string | null
+          fase1_alimentos?: string[] | null
+          fase2_alimentos?: string[] | null
+          fase3_alimentos?: string[] | null
+          id?: number
+          nivel_evidencia?: number | null
+          nome?: string
+          objetivo?: string | null
+          suplementos_recomendados?: string[] | null
+        }
+        Relationships: []
+      }
+      receita_componentes: {
+        Row: {
+          alimento_id: number
+          grams: number
+          id: number
+          receita_id: number
+        }
+        Insert: {
+          alimento_id: number
+          grams: number
+          id?: number
+          receita_id: number
+        }
+        Update: {
+          alimento_id?: number
+          grams?: number
+          id?: number
+          receita_id?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "receita_componentes_alimento_id_fkey"
+            columns: ["alimento_id"]
+            isOneToOne: false
+            referencedRelation: "alimentos_completos"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "receita_componentes_receita_id_fkey"
+            columns: ["receita_id"]
+            isOneToOne: false
+            referencedRelation: "receitas"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      receitas: {
+        Row: {
+          created_at: string
+          id: number
+          nome: string
+        }
+        Insert: {
+          created_at?: string
+          id?: number
+          nome: string
+        }
+        Update: {
+          created_at?: string
+          id?: number
+          nome?: string
+        }
+        Relationships: []
+      }
+      receitas_terapeuticas: {
+        Row: {
+          beneficios_terapeuticos: string[] | null
+          contraindicacoes: string | null
+          created_at: string | null
+          dificuldade: string | null
+          dosagem_recomendada: string | null
+          frequencia_consumo: string | null
+          id: number
+          ingredientes: Json | null
+          instrucoes_preparo: string | null
+          nome: string
+          objetivo_terapeutico: string | null
+          tempo_preparo: number | null
+        }
+        Insert: {
+          beneficios_terapeuticos?: string[] | null
+          contraindicacoes?: string | null
+          created_at?: string | null
+          dificuldade?: string | null
+          dosagem_recomendada?: string | null
+          frequencia_consumo?: string | null
+          id?: number
+          ingredientes?: Json | null
+          instrucoes_preparo?: string | null
+          nome: string
+          objetivo_terapeutico?: string | null
+          tempo_preparo?: number | null
+        }
+        Update: {
+          beneficios_terapeuticos?: string[] | null
+          contraindicacoes?: string | null
+          created_at?: string | null
+          dificuldade?: string | null
+          dosagem_recomendada?: string | null
+          frequencia_consumo?: string | null
+          id?: number
+          ingredientes?: Json | null
+          instrucoes_preparo?: string | null
+          nome?: string
+          objetivo_terapeutico?: string | null
+          tempo_preparo?: number | null
         }
         Relationships: []
       }
@@ -2775,6 +3383,8 @@ export type Database = {
           materials_needed: string[] | null
           target_saboteurs: string[] | null
           title: string
+          tools: Json | null
+          tools_data: Json | null
           type: string
           updated_at: string | null
         }
@@ -2791,6 +3401,8 @@ export type Database = {
           materials_needed?: string[] | null
           target_saboteurs?: string[] | null
           title: string
+          tools?: Json | null
+          tools_data?: Json | null
           type?: string
           updated_at?: string | null
         }
@@ -2807,6 +3419,8 @@ export type Database = {
           materials_needed?: string[] | null
           target_saboteurs?: string[] | null
           title?: string
+          tools?: Json | null
+          tools_data?: Json | null
           type?: string
           updated_at?: string | null
         }
@@ -3092,6 +3706,79 @@ export type Database = {
             columns: ["alimento_substituto_id"]
             isOneToOne: false
             referencedRelation: "alimentos"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      substituicoes_inteligentes: {
+        Row: {
+          alimento_original_id: number | null
+          alimento_substituto_id: number | null
+          beneficio_esperado: string | null
+          contraindicacoes: string | null
+          created_at: string | null
+          desvantagens: string | null
+          doenca_condicao_id: number | null
+          dosagem_equivalente: string | null
+          forma_preparo: string | null
+          id: number
+          motivo_substituicao: string | null
+          similaridade_nutricional: number | null
+          tempo_adaptacao: string | null
+          vantagens: string | null
+        }
+        Insert: {
+          alimento_original_id?: number | null
+          alimento_substituto_id?: number | null
+          beneficio_esperado?: string | null
+          contraindicacoes?: string | null
+          created_at?: string | null
+          desvantagens?: string | null
+          doenca_condicao_id?: number | null
+          dosagem_equivalente?: string | null
+          forma_preparo?: string | null
+          id?: number
+          motivo_substituicao?: string | null
+          similaridade_nutricional?: number | null
+          tempo_adaptacao?: string | null
+          vantagens?: string | null
+        }
+        Update: {
+          alimento_original_id?: number | null
+          alimento_substituto_id?: number | null
+          beneficio_esperado?: string | null
+          contraindicacoes?: string | null
+          created_at?: string | null
+          desvantagens?: string | null
+          doenca_condicao_id?: number | null
+          dosagem_equivalente?: string | null
+          forma_preparo?: string | null
+          id?: number
+          motivo_substituicao?: string | null
+          similaridade_nutricional?: number | null
+          tempo_adaptacao?: string | null
+          vantagens?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "substituicoes_inteligentes_alimento_original_id_fkey"
+            columns: ["alimento_original_id"]
+            isOneToOne: false
+            referencedRelation: "alimentos_completos"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "substituicoes_inteligentes_alimento_substituto_id_fkey"
+            columns: ["alimento_substituto_id"]
+            isOneToOne: false
+            referencedRelation: "alimentos_completos"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "substituicoes_inteligentes_doenca_condicao_id_fkey"
+            columns: ["doenca_condicao_id"]
+            isOneToOne: false
+            referencedRelation: "doencas_condicoes"
             referencedColumns: ["id"]
           },
         ]
@@ -3820,17 +4507,24 @@ export type Database = {
           approval_status: string | null
           approved_at: string | null
           assigned_at: string | null
+          auto_save_data: Json | null
           completed_at: string | null
           created_at: string | null
+          cycle_number: number | null
           due_date: string | null
           feedback: Json | null
           id: string
+          is_locked: boolean | null
+          last_activity: string | null
+          next_available_date: string | null
           notes: string | null
           progress: number | null
+          review_count: number | null
           sent_at: string | null
           session_id: string | null
           started_at: string | null
           status: string | null
+          tools_data: Json | null
           updated_at: string | null
           user_id: string | null
         }
@@ -3838,17 +4532,24 @@ export type Database = {
           approval_status?: string | null
           approved_at?: string | null
           assigned_at?: string | null
+          auto_save_data?: Json | null
           completed_at?: string | null
           created_at?: string | null
+          cycle_number?: number | null
           due_date?: string | null
           feedback?: Json | null
           id?: string
+          is_locked?: boolean | null
+          last_activity?: string | null
+          next_available_date?: string | null
           notes?: string | null
           progress?: number | null
+          review_count?: number | null
           sent_at?: string | null
           session_id?: string | null
           started_at?: string | null
           status?: string | null
+          tools_data?: Json | null
           updated_at?: string | null
           user_id?: string | null
         }
@@ -3856,17 +4557,24 @@ export type Database = {
           approval_status?: string | null
           approved_at?: string | null
           assigned_at?: string | null
+          auto_save_data?: Json | null
           completed_at?: string | null
           created_at?: string | null
+          cycle_number?: number | null
           due_date?: string | null
           feedback?: Json | null
           id?: string
+          is_locked?: boolean | null
+          last_activity?: string | null
+          next_available_date?: string | null
           notes?: string | null
           progress?: number | null
+          review_count?: number | null
           sent_at?: string | null
           session_id?: string | null
           started_at?: string | null
           status?: string | null
+          tools_data?: Json | null
           updated_at?: string | null
           user_id?: string | null
         }
@@ -4186,6 +4894,209 @@ export type Database = {
             columns: ["alimento_id"]
             isOneToOne: false
             referencedRelation: "alimentos"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      valores_nutricionais_completos: {
+        Row: {
+          ala: number | null
+          alimento_id: number | null
+          aminoacidos_essenciais: Json | null
+          betaina: number | null
+          calcio: number | null
+          calorias: number | null
+          carboidrato: number | null
+          carboidratos: number | null
+          carga_glicemica: number | null
+          carotenoides: number | null
+          cobre: number | null
+          colina: number | null
+          created_at: string | null
+          dha: number | null
+          epa: number | null
+          ferro: number | null
+          fibra: number | null
+          fibras: number | null
+          fibras_insoluveis: number | null
+          fibras_soluveis: number | null
+          flavonoides: number | null
+          fosforo: number | null
+          gordura: number | null
+          gordura_insaturada: number | null
+          gordura_saturada: number | null
+          gordura_trans: number | null
+          gorduras: number | null
+          id: number
+          indice_glicemico: number | null
+          indice_saciedade: number | null
+          inositol: number | null
+          kcal: number | null
+          magnesio: number | null
+          manganes: number | null
+          omega_3: number | null
+          omega_6: number | null
+          omega_9: number | null
+          pdcaas: number | null
+          polifenois: number | null
+          potassio: number | null
+          proteina: number | null
+          quercetina: number | null
+          resveratrol: number | null
+          selenio: number | null
+          sodio: number | null
+          sodio_mg: number | null
+          taurina: number | null
+          valor_biologico: number | null
+          vitamina_a: number | null
+          vitamina_b1: number | null
+          vitamina_b12: number | null
+          vitamina_b2: number | null
+          vitamina_b3: number | null
+          vitamina_b5: number | null
+          vitamina_b6: number | null
+          vitamina_b7: number | null
+          vitamina_b9: number | null
+          vitamina_c: number | null
+          vitamina_d: number | null
+          vitamina_e: number | null
+          vitamina_k: number | null
+          zinco: number | null
+        }
+        Insert: {
+          ala?: number | null
+          alimento_id?: number | null
+          aminoacidos_essenciais?: Json | null
+          betaina?: number | null
+          calcio?: number | null
+          calorias?: number | null
+          carboidrato?: number | null
+          carboidratos?: number | null
+          carga_glicemica?: number | null
+          carotenoides?: number | null
+          cobre?: number | null
+          colina?: number | null
+          created_at?: string | null
+          dha?: number | null
+          epa?: number | null
+          ferro?: number | null
+          fibra?: number | null
+          fibras?: number | null
+          fibras_insoluveis?: number | null
+          fibras_soluveis?: number | null
+          flavonoides?: number | null
+          fosforo?: number | null
+          gordura?: number | null
+          gordura_insaturada?: number | null
+          gordura_saturada?: number | null
+          gordura_trans?: number | null
+          gorduras?: number | null
+          id?: number
+          indice_glicemico?: number | null
+          indice_saciedade?: number | null
+          inositol?: number | null
+          kcal?: number | null
+          magnesio?: number | null
+          manganes?: number | null
+          omega_3?: number | null
+          omega_6?: number | null
+          omega_9?: number | null
+          pdcaas?: number | null
+          polifenois?: number | null
+          potassio?: number | null
+          proteina?: number | null
+          quercetina?: number | null
+          resveratrol?: number | null
+          selenio?: number | null
+          sodio?: number | null
+          sodio_mg?: number | null
+          taurina?: number | null
+          valor_biologico?: number | null
+          vitamina_a?: number | null
+          vitamina_b1?: number | null
+          vitamina_b12?: number | null
+          vitamina_b2?: number | null
+          vitamina_b3?: number | null
+          vitamina_b5?: number | null
+          vitamina_b6?: number | null
+          vitamina_b7?: number | null
+          vitamina_b9?: number | null
+          vitamina_c?: number | null
+          vitamina_d?: number | null
+          vitamina_e?: number | null
+          vitamina_k?: number | null
+          zinco?: number | null
+        }
+        Update: {
+          ala?: number | null
+          alimento_id?: number | null
+          aminoacidos_essenciais?: Json | null
+          betaina?: number | null
+          calcio?: number | null
+          calorias?: number | null
+          carboidrato?: number | null
+          carboidratos?: number | null
+          carga_glicemica?: number | null
+          carotenoides?: number | null
+          cobre?: number | null
+          colina?: number | null
+          created_at?: string | null
+          dha?: number | null
+          epa?: number | null
+          ferro?: number | null
+          fibra?: number | null
+          fibras?: number | null
+          fibras_insoluveis?: number | null
+          fibras_soluveis?: number | null
+          flavonoides?: number | null
+          fosforo?: number | null
+          gordura?: number | null
+          gordura_insaturada?: number | null
+          gordura_saturada?: number | null
+          gordura_trans?: number | null
+          gorduras?: number | null
+          id?: number
+          indice_glicemico?: number | null
+          indice_saciedade?: number | null
+          inositol?: number | null
+          kcal?: number | null
+          magnesio?: number | null
+          manganes?: number | null
+          omega_3?: number | null
+          omega_6?: number | null
+          omega_9?: number | null
+          pdcaas?: number | null
+          polifenois?: number | null
+          potassio?: number | null
+          proteina?: number | null
+          quercetina?: number | null
+          resveratrol?: number | null
+          selenio?: number | null
+          sodio?: number | null
+          sodio_mg?: number | null
+          taurina?: number | null
+          valor_biologico?: number | null
+          vitamina_a?: number | null
+          vitamina_b1?: number | null
+          vitamina_b12?: number | null
+          vitamina_b2?: number | null
+          vitamina_b3?: number | null
+          vitamina_b5?: number | null
+          vitamina_b6?: number | null
+          vitamina_b7?: number | null
+          vitamina_b9?: number | null
+          vitamina_c?: number | null
+          vitamina_d?: number | null
+          vitamina_e?: number | null
+          vitamina_k?: number | null
+          zinco?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "valores_nutricionais_completos_alimento_id_fkey"
+            columns: ["alimento_id"]
+            isOneToOne: false
+            referencedRelation: "alimentos_completos"
             referencedColumns: ["id"]
           },
         ]
