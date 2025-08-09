@@ -383,7 +383,7 @@ const SofiaNutricionalPage: React.FC = () => {
   };
 
   const statusCard = (
-    <Card className="h-full">
+    <Card className="h-full bg-card/60 backdrop-blur-xl border border-border/30 shadow-card">
       <CardHeader className="pb-2">
         <CardTitle className="text-base flex items-center gap-2"><Calendar className="h-4 w-4" /> Status do Cardápio Atual</CardTitle>
         <CardDescription>Plano ativo e data de criação</CardDescription>
@@ -417,7 +417,7 @@ const SofiaNutricionalPage: React.FC = () => {
   );
 
   const scoreCard = (
-    <Card className="h-full">
+    <Card className="h-full bg-card/60 backdrop-blur-xl border border-border/30 shadow-card">
       <CardHeader className="pb-2">
         <CardTitle className="text-base flex items-center gap-2"><Star className="h-4 w-4" /> Score Nutricional</CardTitle>
         <CardDescription>Equilíbrio e variedade do cardápio</CardDescription>
@@ -440,7 +440,7 @@ const SofiaNutricionalPage: React.FC = () => {
   );
 
   const lastChatCard = (
-    <Card className="h-full">
+    <Card className="h-full bg-card/60 backdrop-blur-xl border border-border/30 shadow-card">
       <CardHeader className="pb-2">
         <CardTitle className="text-base flex items-center gap-2"><MessageSquare className="h-4 w-4" /> Última Conversa com a Sofia</CardTitle>
         <CardDescription>Interações sobre alimentação</CardDescription>
@@ -673,13 +673,25 @@ const SofiaNutricionalPage: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen bg-gradient-dark">
       <ConfettiAnimation trigger={confettiTrigger} />
       <div className="mx-auto max-w-7xl p-4 sm:p-6 space-y-4">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-xl sm:text-2xl font-semibold flex items-center gap-2"><Utensils className="h-5 w-5" /> Sofia Nutricional</h1>
-            <p className="text-sm text-muted-foreground">Painel completo de nutrição integrado à Sofia</p>
+        {/* Hero Tech Premium */}
+        <div className="relative overflow-hidden rounded-2xl border border-border/30 bg-card/60 backdrop-blur-xl shadow-glow">
+          <div className="absolute inset-0 pointer-events-none" style={{ background: 'radial-gradient(600px 200px at 20% -20%, rgba(124,58,237,0.25), transparent), radial-gradient(500px 200px at 80% 0%, rgba(34,211,238,0.18), transparent)' }} />
+          <div className="relative p-5 sm:p-6 flex items-center justify-between">
+            <div>
+              <h1 className="text-2xl sm:text-3xl font-semibold flex items-center gap-2 text-foreground">
+                <Utensils className="h-6 w-6 text-accent" /> Sofia Nutricional
+              </h1>
+              <p className="text-sm text-muted-foreground">Planejamento inteligente com garantia de metas</p>
+            </div>
+            <div className="flex items-center gap-2">
+              {currentPlan?.tags?.includes('Garantido') && (
+                <span className="px-3 py-1 rounded-full bg-emerald-500/15 text-emerald-300 border border-emerald-400/30 text-xs">Garantido ✓</span>
+              )}
+              <Button onClick={() => setIntakeOpen(true)} className="bg-gradient-primary border border-primary/30 shadow-glow">Gerar agora</Button>
+            </div>
           </div>
         </div>
 

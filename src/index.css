@@ -6,40 +6,40 @@
 
 @layer base {
   :root {
-    /* Health Color Scheme - Verde, Azul e Branco */
-    --background: 0 0% 98%; /* Branco off-white para clareza */
-    --foreground: 210 40% 8%; /* Azul escuro para texto */
+    /* Tech Premium Scheme */
+    --background: 230 35% 6%;   /* #0B1020 */
+    --foreground: 220 20% 96%;  /* texto quase branco */
     
-    /* Card system - Health style */
-    --card: 0 0% 100%; /* Branco puro para cards */
-    --card-foreground: 210 40% 8%;
+    /* Surfaces glass */
+    --card: 230 35% 8%;
+    --card-foreground: 220 20% 96%;
     
     /* Popover system */
     --popover: 0 0% 100%;
     --popover-foreground: 210 40% 8%;
     
-    /* Verde Saúde como Primary */
-    --primary: 142 76% 36%; /* Verde médico #22c55e */
+    /* Tech Indigo/Violet primary + Neon Cyan accent */
+    --primary: 248 80% 67%;   /* #7C3AED */
     --primary-foreground: 0 0% 100%;
     
-    --secondary: 197 37% 96%; /* Azul claro suave */
-    --secondary-foreground: 210 40% 8%;
+    --secondary: 230 35% 10%;
+    --secondary-foreground: 220 20% 96%;
     
     /* UI colors Health style */
-    --muted: 210 40% 96%; /* Azul muito claro */
-    --muted-foreground: 215 16% 47%;
+    --muted: 232 32% 16%;
+    --muted-foreground: 220 12% 75%;
     
-    --accent: 199 89% 48%; /* Azul médico #0ea5e9 */
-    --accent-foreground: 0 0% 100%;
+    --accent: 188 90% 52%; /* #22D3EE */
+    --accent-foreground: 230 35% 8%;
     
     /* Status colors Health theme */
-    --destructive: 0 84% 60%; /* Vermelho suave para erro */
+    --destructive: 0 84% 60%;
     --destructive-foreground: 0 0% 100%;
 
-    --success: 142 76% 36%; /* Verde médico */
+    --success: 142 76% 36%;
     --success-foreground: 0 0% 100%;
 
-    --warning: 32 95% 44%; /* Laranja médico */
+    --warning: 32 95% 44%;
     --warning-foreground: 0 0% 100%;
 
     /* Instituto cores ajustadas para Health theme */
@@ -49,9 +49,9 @@
     --instituto-gray: 215 16% 47%; /* Cinza neutro */
     
     /* Interactive elements */
-    --border: 214 32% 91%; /* Bordas azul claro */
-    --input: 0 0% 100%; /* Inputs brancos */
-    --ring: 142 76% 36%; /* Focus ring verde */
+    --border: 230 30% 20%;
+    --input: 230 35% 10%;
+    --ring: 248 80% 67%;
     
     /* Health colors com Health theme */
     --health-heart: 0 84% 60%; /* Vermelho coração */
@@ -59,22 +59,22 @@
     --health-calories: 32 95% 44%; /* Laranja energia */
     --health-hydration: 199 89% 48%; /* Azul hidratação */
     
-    /* Health Gradients */
-    --gradient-primary: linear-gradient(135deg, hsl(142 76% 36%), hsl(142 76% 25%));
-    --gradient-dark: linear-gradient(135deg, hsl(210 40% 8%), hsl(210 40% 12%));
-    --gradient-card: linear-gradient(135deg, hsl(0 0% 100%), hsl(197 37% 96%));
-    --gradient-accent: linear-gradient(135deg, hsl(199 89% 48%), hsl(199 89% 38%));
+    /* Tech Gradients */
+    --gradient-primary: linear-gradient(135deg, hsl(248 80% 67%), hsl(252 84% 64%));
+    --gradient-dark: linear-gradient(180deg, #0B1020, #0F1530 60%, #04060E);
+    --gradient-card: linear-gradient(180deg, rgba(255,255,255,0.06), rgba(255,255,255,0.02));
+    --gradient-accent: linear-gradient(135deg, #22D3EE, #1FBFD6);
     
     /* Health Shadows */
-    --shadow-elegant: 0 10px 30px -10px hsl(142 76% 36% / 0.15);
-    --shadow-glow: 0 0 40px hsl(142 76% 36% / 0.2);
-    --shadow-card: 0 4px 20px hsl(210 40% 8% / 0.08);
+    --shadow-elegant: 0 24px 48px -16px rgba(0,0,0,0.45);
+    --shadow-glow: 0 0 48px rgba(124,58,237,0.35);
+    --shadow-card: 0 12px 32px rgba(0,0,0,0.35);
     
     /* Animations */
     --transition-smooth: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
     
     /* Layout */
-    --radius: 0.75rem;
+    --radius: 1rem;
 
     /* Health Sidebar */
     --sidebar-background: 0 0% 100%; /* Branco sidebar Health */
