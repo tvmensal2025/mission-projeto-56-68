@@ -21,6 +21,7 @@ import { exportMealPlanToPDF } from '@/utils/exportMealPlanPDF';
 import { openMealPlanHTML, downloadMealPlanHTML } from '@/utils/exportMealPlanHTML';
 import MealSwapModal from '@/components/sofia/MealSwapModal';
 import MetricCard from '@/components/ui/MetricCard';
+import { exportShoppingListToPDF } from '@/utils/exportShoppingListPDF';
 
 type BudgetLevel = 'baixo' | 'médio' | 'alto';
 
@@ -69,6 +70,7 @@ const SofiaNutricionalPage: React.FC = () => {
   const [suggestionOpen, setSuggestionOpen] = useState(false);
   const [targetCalories, setTargetCalories] = useState<number | undefined>(undefined);
   const [shoppingOpen, setShoppingOpen] = useState(false);
+  const [shoppingMultiplier, setShoppingMultiplier] = useState<number>(1);
   const [intakeOpen, setIntakeOpen] = useState(false);
   const [lastIntake, setLastIntake] = useState<IntakeAnswers | null>(null);
   const [swapOpen, setSwapOpen] = useState(false);
@@ -420,7 +422,7 @@ const SofiaNutricionalPage: React.FC = () => {
     const items = aggregatedShoppingList();
     if (items.length === 0) return;
     const header = 'Categoria,Item,Quantidade,Unidade\n';
-    const rows = items.map(i => `${i.category},${i.name},${Math.round(i.quantity)},${i.unit}`).join('\n');
+    const rows = items.map(i => `${i.category},${i.name},${Math.round(i.quantity * shoppingMultiplier)},${i.unit}`).join('\n');
     const csv = header + rows;
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
@@ -930,6 +932,14 @@ const SofiaNutricionalPage: React.FC = () => {
               <DialogTitle>Lista de Compras (1 semana)</DialogTitle>
             </DialogHeader>
             <div className="space-y-2 max-h-[60vh] overflow-y-auto">
+              <div className="flex items-center justify-between pb-2">
+                <div className="text-sm text-muted-foreground">Multiplicar por:</div>
+                <div className="flex gap-2">
+                  {[1,2,3].map(m => (
+                    <Button key={m} variant={shoppingMultiplier === m ? 'default' : 'outline'} size="sm" onClick={() => setShoppingMultiplier(m)}>{m}×</Button>
+                  ))}
+                </div>
+              </div>
               {aggregatedShoppingList().length === 0 ? (
                 <div className="text-sm text-muted-foreground">Gere e salve um cardápio para ver a lista de compras.</div>
               ) : (
@@ -943,7 +953,7 @@ const SofiaNutricionalPage: React.FC = () => {
                       {items.map((item, idx) => (
                         <div key={idx} className="flex items-center justify-between p-2 text-sm">
                           <div className="font-medium">{item.name}</div>
-                          <div className="text-muted-foreground">{Math.round(item.quantity)} {item.unit}</div>
+                          <div className="text-muted-foreground">{Math.round(item.quantity * shoppingMultiplier)} {item.unit}</div>
                         </div>
                       ))}
                     </div>
@@ -954,6 +964,14 @@ const SofiaNutricionalPage: React.FC = () => {
             <div className="flex justify-end gap-2">
               <Button variant="outline" onClick={() => window.print()}>Imprimir</Button>
               <Button variant="default" onClick={downloadShoppingCSV}>Baixar CSV</Button>
+              <Button variant="default" onClick={async () => {
+                const items = aggregatedShoppingList().map(i => ({ ...i, quantity: i.quantity * shoppingMultiplier }));
+                await exportShoppingListToPDF(items, {
+                  multiplier: shoppingMultiplier,
+                  userName: user?.user_metadata?.full_name || undefined,
+                  dateLabel: new Date().toLocaleDateString('pt-BR')
+                });
+              }}>Baixar PDF</Button>
             </div>
           </DialogContent>
         </Dialog>
