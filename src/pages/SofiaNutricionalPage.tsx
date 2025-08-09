@@ -166,6 +166,7 @@ const SofiaNutricionalPage: React.FC = () => {
     openMealPlanHTML({
       dateLabel: new Date(currentPlan.createdAt).toLocaleDateString('pt-BR'),
       targetCaloriesKcal: targetCalories,
+      guaranteed: currentPlan.tags?.includes('Garantido'),
       meals: {
         breakfast: today?.breakfast as any,
         lunch: today?.lunch as any,
@@ -182,6 +183,7 @@ const SofiaNutricionalPage: React.FC = () => {
     downloadMealPlanHTML({
       dateLabel: new Date(currentPlan.createdAt).toLocaleDateString('pt-BR'),
       targetCaloriesKcal: targetCalories,
+      guaranteed: currentPlan.tags?.includes('Garantido'),
       meals: {
         breakfast: today?.breakfast as any,
         lunch: today?.lunch as any,
