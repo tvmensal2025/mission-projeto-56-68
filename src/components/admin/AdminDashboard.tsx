@@ -17,6 +17,7 @@ import {
   Loader2
 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
+import NutritionAliasAdmin from '@/components/admin/NutritionAliasAdmin';
 
 interface DashboardStats {
   totalUsers: number;
@@ -370,6 +371,16 @@ const AdminDashboard: React.FC = () => {
           </CardContent>
         </Card>
       </div>
+
+      {/* Admin de Aliases Nutricionais */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Nutrição – Admin de Aliases</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <NutritionAliasAdmin />
+        </CardContent>
+      </Card>
     </div>
   );
 };

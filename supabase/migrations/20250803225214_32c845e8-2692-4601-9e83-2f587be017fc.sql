@@ -21,15 +21,19 @@ CREATE POLICY "Admins can view all profiles" ON public.profiles
   );
 
 -- 2. RECRIAR POLÍTICAS PARA USER_SESSIONS
+DROP POLICY IF EXISTS "Users can view their own sessions" ON public.user_sessions;
 CREATE POLICY "Users can view their own sessions" ON public.user_sessions
   FOR SELECT USING (auth.uid() = user_id);
 
+DROP POLICY IF EXISTS "Users can update their own sessions" ON public.user_sessions;
 CREATE POLICY "Users can update their own sessions" ON public.user_sessions
   FOR UPDATE USING (auth.uid() = user_id);
 
+DROP POLICY IF EXISTS "Users can create sessions for themselves" ON public.user_sessions;
 CREATE POLICY "Users can create sessions for themselves" ON public.user_sessions
   FOR INSERT WITH CHECK (auth.uid() = user_id);
 
+DROP POLICY IF EXISTS "Admins can manage all user sessions" ON public.user_sessions;
 CREATE POLICY "Admins can manage all user sessions" ON public.user_sessions
   FOR ALL USING (
     EXISTS (
@@ -101,28 +105,36 @@ ALTER TABLE public.daily_responses ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.daily_missions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.health_diary ENABLE ROW LEVEL SECURITY;
 
--- 8. CRIAR POLÍTICAS BÁSICAS PARA TABELAS QUE PRECISAM
+-- Idempotência: dropar antes de criar
+DROP POLICY IF EXISTS "Users manage own activity categories" ON public.activity_categories;
 CREATE POLICY "Users manage own activity categories" ON public.activity_categories
   FOR ALL USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
 
+DROP POLICY IF EXISTS "Users manage own activity sessions" ON public.activity_sessions;
 CREATE POLICY "Users manage own activity sessions" ON public.activity_sessions
   FOR ALL USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
 
+DROP POLICY IF EXISTS "Users manage own assessments" ON public.assessments;
 CREATE POLICY "Users manage own assessments" ON public.assessments
   FOR ALL USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
 
+DROP POLICY IF EXISTS "Users manage own mission sessions" ON public.daily_mission_sessions;
 CREATE POLICY "Users manage own mission sessions" ON public.daily_mission_sessions
   FOR ALL USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
 
+DROP POLICY IF EXISTS "Users manage own daily responses" ON public.daily_responses;
 CREATE POLICY "Users manage own daily responses" ON public.daily_responses
   FOR ALL USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
 
+DROP POLICY IF EXISTS "Users manage own missions" ON public.daily_missions;
 CREATE POLICY "Users manage own missions" ON public.daily_missions
   FOR ALL USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
 
+DROP POLICY IF EXISTS "Users manage own health diary" ON public.health_diary;
 CREATE POLICY "Users manage own health diary" ON public.health_diary
   FOR ALL USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
 
+DROP POLICY IF EXISTS "Admins manage AI configurations" ON public.ai_configurations;
 CREATE POLICY "Admins manage AI configurations" ON public.ai_configurations
   FOR ALL USING (
     EXISTS (

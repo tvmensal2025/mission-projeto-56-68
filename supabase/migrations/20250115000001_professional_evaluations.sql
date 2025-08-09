@@ -46,48 +46,61 @@ CREATE TABLE IF NOT EXISTS professional_evaluations (
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- Índices para performance
-CREATE INDEX idx_professional_evaluations_user_id ON professional_evaluations(user_id);
-CREATE INDEX idx_professional_evaluations_date ON professional_evaluations(evaluation_date DESC);
-CREATE INDEX idx_professional_evaluations_evaluator ON professional_evaluations(evaluator_id);
+-- Garantir coluna evaluator_id em bases já existentes
+ALTER TABLE professional_evaluations ADD COLUMN IF NOT EXISTS evaluator_id UUID;
 
--- RLS (Row Level Security)
+-- Índices para performance (idempotentes)
+CREATE INDEX IF NOT EXISTS idx_professional_evaluations_user_id ON professional_evaluations(user_id);
+CREATE INDEX IF NOT EXISTS idx_professional_evaluations_date ON professional_evaluations(evaluation_date DESC);
+CREATE INDEX IF NOT EXISTS idx_professional_evaluations_evaluator ON professional_evaluations(evaluator_id);
+
 ALTER TABLE professional_evaluations ENABLE ROW LEVEL SECURITY;
 
--- Políticas de acesso
--- Apenas admins podem criar avaliações
-CREATE POLICY "Admins can create evaluations" ON professional_evaluations
-    FOR INSERT WITH CHECK (
+-- Políticas de acesso (idempotentes via bloco DO)
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies WHERE schemaname='public' AND tablename='professional_evaluations' AND policyname='Admins can create evaluations'
+  ) THEN
+    CREATE POLICY "Admins can create evaluations" ON professional_evaluations
+      FOR INSERT WITH CHECK (
         EXISTS (
-            SELECT 1 FROM profiles 
-            WHERE profiles.id = auth.uid() 
-            AND profiles.role = 'admin'
+          SELECT 1 FROM public.profiles p 
+          WHERE (p.user_id = auth.uid() OR p.id = auth.uid()) AND p.role = 'admin'
         )
-    );
+      );
+  END IF;
 
--- Admins podem ver todas as avaliações
-CREATE POLICY "Admins can view all evaluations" ON professional_evaluations
-    FOR SELECT USING (
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies WHERE schemaname='public' AND tablename='professional_evaluations' AND policyname='Admins can view all evaluations'
+  ) THEN
+    CREATE POLICY "Admins can view all evaluations" ON professional_evaluations
+      FOR SELECT USING (
         EXISTS (
-            SELECT 1 FROM profiles 
-            WHERE profiles.id = auth.uid() 
-            AND profiles.role = 'admin'
+          SELECT 1 FROM public.profiles p 
+          WHERE (p.user_id = auth.uid() OR p.id = auth.uid()) AND p.role = 'admin'
         )
-    );
+      );
+  END IF;
 
--- Usuários podem ver suas próprias avaliações
-CREATE POLICY "Users can view own evaluations" ON professional_evaluations
-    FOR SELECT USING (auth.uid() = user_id);
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies WHERE schemaname='public' AND tablename='professional_evaluations' AND policyname='Users can view own evaluations'
+  ) THEN
+    CREATE POLICY "Users can view own evaluations" ON professional_evaluations
+      FOR SELECT USING (auth.uid() = user_id);
+  END IF;
 
--- Admins podem atualizar avaliações
-CREATE POLICY "Admins can update evaluations" ON professional_evaluations
-    FOR UPDATE USING (
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies WHERE schemaname='public' AND tablename='professional_evaluations' AND policyname='Admins can update evaluations'
+  ) THEN
+    CREATE POLICY "Admins can update evaluations" ON professional_evaluations
+      FOR UPDATE USING (
         EXISTS (
-            SELECT 1 FROM profiles 
-            WHERE profiles.id = auth.uid() 
-            AND profiles.role = 'admin'
+          SELECT 1 FROM public.profiles p 
+          WHERE (p.user_id = auth.uid() OR p.id = auth.uid()) AND p.role = 'admin'
         )
-    );
+      );
+  END IF;
+END $$;
 
 -- Função para atualizar updated_at
 CREATE OR REPLACE FUNCTION update_professional_evaluations_updated_at()
@@ -98,11 +111,16 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- Trigger para updated_at
-CREATE TRIGGER update_professional_evaluations_updated_at
-    BEFORE UPDATE ON professional_evaluations
-    FOR EACH ROW
-    EXECUTE FUNCTION update_professional_evaluations_updated_at();
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_trigger WHERE tgname = 'update_professional_evaluations_updated_at'
+  ) THEN
+    CREATE TRIGGER update_professional_evaluations_updated_at
+      BEFORE UPDATE ON professional_evaluations
+      FOR EACH ROW
+      EXECUTE FUNCTION update_professional_evaluations_updated_at();
+  END IF;
+END $$;
 
 -- Função para calcular métricas automaticamente
 CREATE OR REPLACE FUNCTION calculate_evaluation_metrics()

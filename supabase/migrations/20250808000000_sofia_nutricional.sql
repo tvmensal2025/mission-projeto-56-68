@@ -60,3 +60,7 @@ create index if not exists idx_meal_feedback_user on public.meal_feedback(user_i
 create index if not exists idx_meal_feedback_suggestion on public.meal_feedback(suggestion_id);
 
 
+
+
+
+

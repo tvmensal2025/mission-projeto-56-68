@@ -26,43 +26,39 @@ COMMENT ON COLUMN google_fit_data.heart_rate_resting IS 'Frequência cardíaca e
 COMMENT ON COLUMN google_fit_data.heart_rate_max IS 'Frequência cardíaca máxima';
 COMMENT ON COLUMN google_fit_data.raw_data IS 'Dados brutos completos do Google Fit em JSON';
 
--- Criar view para análise integrada Sofia/Dr. Vital
-CREATE OR REPLACE VIEW google_fit_analysis AS
+-- Versão simples e resiliente: garante coluna display_name e recria a VIEW
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS display_name TEXT;
+DROP VIEW IF EXISTS google_fit_analysis;
+CREATE VIEW google_fit_analysis AS
 SELECT 
   gfd.*,
-  p.display_name,
+  COALESCE(NULLIF(p.display_name, ''), p.full_name, 'Usuário') AS display_name,
   p.email,
-  -- Calcular métricas derivadas
   CASE 
     WHEN gfd.steps_count >= 10000 THEN 'Excelente'
     WHEN gfd.steps_count >= 7500 THEN 'Bom'
     WHEN gfd.steps_count >= 5000 THEN 'Moderado'
     ELSE 'Baixo'
   END as steps_classification,
-  
   CASE 
     WHEN gfd.heart_rate_avg BETWEEN 60 AND 100 THEN 'Normal'
     WHEN gfd.heart_rate_avg < 60 THEN 'Baixa'
     WHEN gfd.heart_rate_avg > 100 THEN 'Alta'
     ELSE 'Não medido'
   END as heart_rate_classification,
-  
   CASE 
     WHEN gfd.sleep_duration_hours >= 7 AND gfd.sleep_duration_hours <= 9 THEN 'Ideal'
     WHEN gfd.sleep_duration_hours >= 6 AND gfd.sleep_duration_hours < 7 THEN 'Insuficiente'
     WHEN gfd.sleep_duration_hours > 9 THEN 'Excessivo'
     ELSE 'Muito pouco'
   END as sleep_classification,
-  
-  -- Calcular IMC se peso e altura estiverem disponíveis
   CASE 
     WHEN gfd.weight_kg IS NOT NULL AND gfd.height_cm IS NOT NULL AND gfd.height_cm > 0 
     THEN ROUND((gfd.weight_kg / POWER((gfd.height_cm / 100.0), 2))::numeric, 2)
     ELSE NULL
   END as calculated_bmi
-  
 FROM google_fit_data gfd
-LEFT JOIN profiles p ON gfd.user_id = p.id
+LEFT JOIN public.profiles p ON gfd.user_id = p.user_id
 WHERE gfd.sync_timestamp >= NOW() - INTERVAL '90 days'
 ORDER BY gfd.data_date DESC, gfd.sync_timestamp DESC;
 

@@ -17,6 +17,7 @@ import SofiaMealSuggestionModal, { MealPlanGenerated, MealEntry } from '@/compon
 import SofiaIntakeDialog, { IntakeAnswers } from '@/components/sofia/SofiaIntakeDialog';
 import SofiaMealQnAChat, { MealQnAResult } from '@/components/sofia/SofiaMealQnAChat';
 import { exportMealPlanToPDF } from '@/utils/exportMealPlanPDF';
+import { openMealPlanHTML, downloadMealPlanHTML } from '@/utils/exportMealPlanHTML';
 
 type BudgetLevel = 'baixo' | 'médio' | 'alto';
 
@@ -70,6 +71,30 @@ const SofiaNutricionalPage: React.FC = () => {
   const planRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
 
+  // Histórico local para evitar dependência de tabelas durante a v2
+  const HISTORY_STORAGE_KEY = 'sofia_meal_plan_history_v2';
+  const generateId = () => (typeof crypto !== 'undefined' && 'randomUUID' in crypto ? (crypto as any).randomUUID() : `${Date.now()}_${Math.random().toString(36).slice(2,10)}`);
+  const loadHistoryLocal = (): MealPlan[] => {
+    try {
+      const raw = localStorage.getItem(HISTORY_STORAGE_KEY);
+      if (!raw) return [];
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  };
+  const saveHistoryLocal = (plans: MealPlan[]) => {
+    try { localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(plans.slice(0, 20))); } catch { /* ignore */ }
+  };
+  const pushToHistory = (plan: MealPlan) => {
+    const next: MealPlan = { id: plan.id || generateId(), ...plan } as MealPlan;
+    const current = loadHistoryLocal();
+    const updated = [next, ...current].slice(0, 20);
+    saveHistoryLocal(updated);
+    setHistory(updated);
+  };
+
   useEffect(() => {
     let mounted = true;
     supabase.auth.getUser().then(({ data: { user } }) => {
@@ -97,43 +122,8 @@ const SofiaNutricionalPage: React.FC = () => {
         console.warn('Falha ao obter TMB:', e);
       }
     })();
-    // Carregar histórico de cardápios
-    (async () => {
-      try {
-        const { data: session } = await supabase.auth.getSession();
-        const userId = session.session?.user?.id;
-        if (!userId) return;
-        const { data, error } = await supabase
-          .from('meal_suggestions')
-          .select('id, type, created_at, score, tags, plan_json')
-          .eq('user_id', userId)
-          .order('created_at', { ascending: false })
-          .limit(20);
-        if (!error && data) {
-          const mapped: MealPlan[] = data.map((row: any) => {
-            const plan = row.plan_json as any;
-            const day = plan?.days?.hoje || plan?.days?.[Object.keys(plan?.days || {})[0]] || {};
-            const daily: DailyMeals = {
-              breakfast: day.breakfast,
-              lunch: day.lunch,
-              snack: day.afternoon_snack,
-              dinner: day.dinner,
-            };
-            return {
-              id: row.id,
-              type: row.type || 'dia',
-              createdAt: row.created_at,
-              tags: row.tags || [],
-              score: row.score || 0,
-              days: { hoje: daily },
-            } as MealPlan;
-          });
-          setHistory(mapped);
-        }
-      } catch (e) {
-        console.warn('Falha ao carregar histórico', e);
-      }
-    })();
+    // Carregar histórico do localStorage (v2 sem dependência de tabela remota)
+    setHistory(loadHistoryLocal());
     return () => {
       mounted = false;
     };
@@ -165,6 +155,38 @@ const SofiaNutricionalPage: React.FC = () => {
     toast({ title: 'Impressão iniciada', description: 'Preparando seu cardápio para impressão.' });
   };
 
+  const handleOpenHTML = () => {
+    if (!currentPlan) return;
+    const today = currentPlan.days['hoje'] || currentPlan.days[Object.keys(currentPlan.days)[0]];
+    openMealPlanHTML({
+      dateLabel: new Date(currentPlan.createdAt).toLocaleDateString('pt-BR'),
+      targetCaloriesKcal: targetCalories,
+      meals: {
+        breakfast: today?.breakfast as any,
+        lunch: today?.lunch as any,
+        afternoon_snack: today?.snack as any,
+        dinner: today?.dinner as any,
+        supper: undefined,
+      }
+    });
+  };
+
+  const handleDownloadHTML = () => {
+    if (!currentPlan) return;
+    const today = currentPlan.days['hoje'] || currentPlan.days[Object.keys(currentPlan.days)[0]];
+    downloadMealPlanHTML({
+      dateLabel: new Date(currentPlan.createdAt).toLocaleDateString('pt-BR'),
+      targetCaloriesKcal: targetCalories,
+      meals: {
+        breakfast: today?.breakfast as any,
+        lunch: today?.lunch as any,
+        afternoon_snack: today?.snack as any,
+        dinner: today?.dinner as any,
+        supper: undefined,
+      }
+    });
+  };
+
   const handleSavePreferences = () => {
     // Persistência será conectada ao Supabase após confirmação do schema
     toast({ title: 'Preferências salvas', description: 'Suas preferências alimentares foram registradas.' });
@@ -177,6 +199,130 @@ const SofiaNutricionalPage: React.FC = () => {
 
   const handleOpenShoppingList = () => {
     setShoppingOpen(true);
+  };
+
+  // Novo: gerar plano via Edge Function nutrition-planner
+  const generatePlanWithPlanner = async (intake: IntakeAnswers) => {
+    try {
+      const { data, error } = await supabase.functions.invoke('nutrition-planner', {
+        body: {
+          intake: {
+            objetivo: intake.objetivo,
+            alergias: intake.alergias,
+            restricoesReligiosas: intake.restricoesReligiosas,
+            preferencias: intake.preferencias,
+            naoGosta: intake.naoGosta,
+            rotinaHorarios: intake.rotinaHorarios,
+            orcamento: intake.orcamento,
+            tempoPreparoMin: intake.tempoPreparoMin,
+            utensilios: intake.utensilios,
+          },
+          save: false,
+        },
+      });
+
+      if (error || !data?.success) {
+        toast({ title: 'Falha ao gerar plano', description: 'Tentando fluxo alternativo de sugestão…', variant: 'destructive' });
+        setSuggestionOpen(true);
+        return;
+      }
+
+      const bySlot = (data.by_slot || {}) as Record<string, { resolved: any[]; totals: any }>;
+      const toMeal = (slot: string) => {
+        const r = bySlot[slot]?.resolved || [];
+        if (!r.length) return undefined;
+        const ingredients = r
+          .filter((x: any) => x?.nutrients)
+          .map((x: any) => ({ name: x.matched_canonical_name || x.input?.name, quantity: Math.round(x.effective_grams || 0), unit: 'g' }));
+        const kcal = Math.round(bySlot[slot]?.totals?.kcal || 0);
+        return { name: slot, calories_kcal: kcal, ingredients } as any;
+      };
+
+      const daily: DailyMeals = {
+        breakfast: toMeal('breakfast'),
+        lunch: toMeal('lunch'),
+        snack: toMeal('snack'),
+        dinner: toMeal('dinner'),
+      };
+
+      setCurrentPlan({
+        type: 'dia',
+        createdAt: new Date().toISOString(),
+        score: Math.min(100, Math.round(((data.totals?.protein_g || 0) + 1) * 2)),
+        tags: ['Sofia Pro', data.guarantee ? 'Garantido' : 'Estimado'],
+        days: { hoje: daily },
+      });
+      pushToHistory({
+        type: 'dia',
+        createdAt: new Date().toISOString(),
+        score: Math.min(100, Math.round(((data.totals?.protein_g || 0) + 1) * 2)),
+        tags: ['Sofia Pro', data.guarantee ? 'Garantido' : 'Estimado'],
+        days: { hoje: daily },
+      });
+      setLastSofiaInteraction(new Date().toISOString());
+      toast({ title: 'Plano gerado', description: data.guarantee ? 'Metas atendidas (Garantido).' : 'Plano estimado.' });
+    } catch (e: any) {
+      console.error('planner error', e);
+      toast({ title: 'Erro ao gerar', description: 'Use o fluxo alternativo de sugestão.', variant: 'destructive' });
+      setSuggestionOpen(true);
+    }
+  };
+
+  // Salvar plano no Supabase via Edge Function (meal_plans + itens)
+  const handleSavePlan = async () => {
+    try {
+      if (!currentPlan) {
+        toast({ title: 'Sem plano ativo', description: 'Gere um plano antes de salvar.', variant: 'destructive' });
+        return;
+      }
+
+      const intakeToSave: IntakeAnswers = lastIntake || {
+        objetivo: 'Plano diário',
+        alergias: preferences.alergias,
+        restricoesReligiosas: preferences.restricoes,
+        preferencias: preferences.dislikes ? `Evitar: ${preferences.dislikes}` : '',
+        naoGosta: preferences.dislikes,
+        rotinaHorarios: '',
+        orcamento: preferences.orcamento,
+        tempoPreparoMin: preferences.tempoPreparoMin,
+        utensilios: preferences.utensilios,
+      };
+
+      const { data, error } = await supabase.functions.invoke('nutrition-planner', {
+        body: {
+          intake: {
+            objetivo: intakeToSave.objetivo,
+            alergias: intakeToSave.alergias,
+            restricoesReligiosas: intakeToSave.restricoesReligiosas,
+            preferencias: intakeToSave.preferencias,
+            naoGosta: intakeToSave.naoGosta,
+            rotinaHorarios: intakeToSave.rotinaHorarios,
+            orcamento: intakeToSave.orcamento,
+            tempoPreparoMin: intakeToSave.tempoPreparoMin,
+            utensilios: intakeToSave.utensilios,
+          },
+          save: true,
+        },
+      });
+
+      if (error || !data?.success) {
+        toast({ title: 'Falha ao salvar', description: 'Tente novamente em instantes.', variant: 'destructive' });
+        return;
+      }
+
+      const planId = data.plan_id as string | null;
+      if (planId) {
+        const updated: MealPlan = { ...currentPlan, id: planId };
+        setCurrentPlan(updated);
+        // Atualiza histórico com id quando disponível
+        pushToHistory(updated);
+        toast({ title: 'Plano salvo', description: 'Seu cardápio foi salvo no seu perfil.' });
+      } else {
+        toast({ title: 'Plano salvo (parcial)', description: 'Plano salvo, mas sem ID retornado.' });
+      }
+    } catch (e) {
+      toast({ title: 'Erro ao salvar', description: 'Não foi possível salvar o cardápio.', variant: 'destructive' });
+    }
   };
 
   const getCategory = (name: string) => {
@@ -314,6 +460,7 @@ const SofiaNutricionalPage: React.FC = () => {
         <div className="flex gap-2">
           <Button variant="outline" size="sm" onClick={handleOpenShoppingList}><ShoppingCart className="h-4 w-4 mr-1" /> Ver Lista de Compras</Button>
           <Button variant="outline" size="sm" onClick={handleDownloadPDF}><Printer className="h-4 w-4 mr-1" /> Imprimir Cardápio</Button>
+          <Button variant="default" size="sm" onClick={handleSavePlan} disabled={!currentPlan}>Salvar no Perfil</Button>
         </div>
       </div>
       <div ref={planRef} className="space-y-3">
@@ -529,6 +676,8 @@ const SofiaNutricionalPage: React.FC = () => {
                     <div className="flex gap-2">
                       <Button variant="default" onClick={handlePrint}><Printer className="h-4 w-4 mr-1" /> Imprimir</Button>
                       <Button variant="outline" onClick={handleDownloadPDF}><Printer className="h-4 w-4 mr-1" /> Exportar PDF</Button>
+                      <Button variant="outline" onClick={handleOpenHTML}>Abrir HTML</Button>
+                      <Button variant="outline" onClick={handleDownloadHTML}>Baixar HTML</Button>
                     </div>
                   </CardContent>
                 </Card>
@@ -571,26 +720,14 @@ const SofiaNutricionalPage: React.FC = () => {
               days: { hoje: toDailyMeals },
             });
             setLastSofiaInteraction(new Date().toISOString());
-
-            // Salvar automaticamente no Supabase
-            try {
-              const { data: session } = await supabase.auth.getSession();
-              const userId = session.session?.user?.id;
-              if (userId) {
-                await supabase.from('meal_suggestions').insert({
-                  user_id: userId,
-                  type: 'dia',
-                  is_active: true,
-                  target_calories_kcal: targetCalories || null,
-                  score: plan.score || null,
-                  tags: plan.tags || null,
-                  intake_answers: lastIntake || null,
-                  plan_json: plan,
-                });
-              }
-            } catch (e) {
-              console.warn('Falha ao salvar meal_suggestions', e);
-            }
+            // Persistência local (v2). Integração remota será conectada ao schema meal_plans.
+            pushToHistory({
+              type: plan.type,
+              createdAt: new Date().toISOString(),
+              score: plan.score,
+              tags: plan.tags,
+              days: { hoje: toDailyMeals },
+            });
           }}
         />
 
@@ -614,7 +751,18 @@ const SofiaNutricionalPage: React.FC = () => {
                   utensilios: ''
                 });
                 setIntakeOpen(false);
-                setSuggestionOpen(true);
+                // preferir planner determinístico; se falhar, cai para modal de sugestão
+                generatePlanWithPlanner({
+                  objetivo: 'Plano diário',
+                  alergias: qna.breakfast.restrictions,
+                  restricoesReligiosas: '',
+                  preferencias: `${qna.breakfast.description}; ${qna.lunch.description}; ${qna.dinner.description}`,
+                  naoGosta: '',
+                  rotinaHorarios: '',
+                  orcamento: 'médio',
+                  tempoPreparoMin: 30,
+                  utensilios: ''
+                });
               }}
             />
           </DialogContent>

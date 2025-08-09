@@ -3,20 +3,24 @@ INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_typ
 VALUES ('chat-images', 'chat-images', true, 5242880, ARRAY['image/jpeg', 'image/png', 'image/jpg', 'image/gif'])
 ON CONFLICT (id) DO NOTHING;
 
--- Criar políticas para o bucket chat-images
-CREATE POLICY IF NOT EXISTS "Public can view chat images"
+-- Idempotência: storage não suporta IF NOT EXISTS em CREATE POLICY
+DROP POLICY IF EXISTS "Public can view chat images" ON storage.objects;
+CREATE POLICY "Public can view chat images"
 ON storage.objects FOR SELECT
 USING (bucket_id = 'chat-images');
 
-CREATE POLICY IF NOT EXISTS "Authenticated users can upload chat images"
+DROP POLICY IF EXISTS "Authenticated users can upload chat images" ON storage.objects;
+CREATE POLICY "Authenticated users can upload chat images"
 ON storage.objects FOR INSERT 
 WITH CHECK (bucket_id = 'chat-images' AND auth.uid() IS NOT NULL);
 
-CREATE POLICY IF NOT EXISTS "Users can update their own chat images"
+DROP POLICY IF EXISTS "Users can update their own chat images" ON storage.objects;
+CREATE POLICY "Users can update their own chat images"
 ON storage.objects FOR UPDATE
 USING (bucket_id = 'chat-images' AND auth.uid()::text = (storage.foldername(name))[1]);
 
-CREATE POLICY IF NOT EXISTS "Users can delete their own chat images"
+DROP POLICY IF EXISTS "Users can delete their own chat images" ON storage.objects;
+CREATE POLICY "Users can delete their own chat images"
 ON storage.objects FOR DELETE
 USING (bucket_id = 'chat-images' AND auth.uid()::text = (storage.foldername(name))[1]);
 
@@ -63,31 +67,40 @@ ALTER TABLE sofia_messages ENABLE ROW LEVEL SECURITY;
 ALTER TABLE sofia_food_analysis ENABLE ROW LEVEL SECURITY;
 
 -- Políticas RLS para sofia_conversations
-CREATE POLICY "Users can view own conversations" ON sofia_conversations
-FOR SELECT USING (auth.uid() = user_id);
-
-CREATE POLICY "Users can create own conversations" ON sofia_conversations  
-FOR INSERT WITH CHECK (auth.uid() = user_id);
-
-CREATE POLICY "Users can update own conversations" ON sofia_conversations
-FOR UPDATE USING (auth.uid() = user_id);
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname='public' AND tablename='sofia_conversations' AND policyname='Users can view own conversations') THEN
+    CREATE POLICY "Users can view own conversations" ON sofia_conversations FOR SELECT USING (auth.uid() = user_id);
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname='public' AND tablename='sofia_conversations' AND policyname='Users can create own conversations') THEN
+    CREATE POLICY "Users can create own conversations" ON sofia_conversations FOR INSERT WITH CHECK (auth.uid() = user_id);
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname='public' AND tablename='sofia_conversations' AND policyname='Users can update own conversations') THEN
+    CREATE POLICY "Users can update own conversations" ON sofia_conversations FOR UPDATE USING (auth.uid() = user_id);
+  END IF;
+END $$;
 
 -- Políticas RLS para sofia_messages
-CREATE POLICY "Users can view own messages" ON sofia_messages
-FOR SELECT USING (auth.uid() = user_id);
-
-CREATE POLICY "Users can create own messages" ON sofia_messages
-FOR INSERT WITH CHECK (auth.uid() = user_id);
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname='public' AND tablename='sofia_messages' AND policyname='Users can view own messages') THEN
+    CREATE POLICY "Users can view own messages" ON sofia_messages FOR SELECT USING (auth.uid() = user_id);
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname='public' AND tablename='sofia_messages' AND policyname='Users can create own messages') THEN
+    CREATE POLICY "Users can create own messages" ON sofia_messages FOR INSERT WITH CHECK (auth.uid() = user_id);
+  END IF;
+END $$;
 
 -- Políticas RLS para sofia_food_analysis
-CREATE POLICY "Users can view own food analysis" ON sofia_food_analysis
-FOR SELECT USING (auth.uid() = user_id);
-
-CREATE POLICY "Users can create own food analysis" ON sofia_food_analysis
-FOR INSERT WITH CHECK (auth.uid() = user_id);
-
-CREATE POLICY "Users can update own food analysis" ON sofia_food_analysis
-FOR UPDATE USING (auth.uid() = user_id);
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname='public' AND tablename='sofia_food_analysis' AND policyname='Users can view own food analysis') THEN
+    CREATE POLICY "Users can view own food analysis" ON sofia_food_analysis FOR SELECT USING (auth.uid() = user_id);
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname='public' AND tablename='sofia_food_analysis' AND policyname='Users can create own food analysis') THEN
+    CREATE POLICY "Users can create own food analysis" ON sofia_food_analysis FOR INSERT WITH CHECK (auth.uid() = user_id);
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname='public' AND tablename='sofia_food_analysis' AND policyname='Users can update own food analysis') THEN
+    CREATE POLICY "Users can update own food analysis" ON sofia_food_analysis FOR UPDATE USING (auth.uid() = user_id);
+  END IF;
+END $$;
 
 -- Trigger para atualizar updated_at
 CREATE OR REPLACE FUNCTION update_updated_at_column()

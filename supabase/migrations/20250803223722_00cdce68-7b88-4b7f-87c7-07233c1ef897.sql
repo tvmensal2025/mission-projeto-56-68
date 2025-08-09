@@ -93,12 +93,15 @@ CREATE POLICY "Admins can view all profiles" ON public.profiles
   );
 
 -- Recriar políticas RLS corretas para USER_SESSIONS
+DROP POLICY IF EXISTS "Users can view their own sessions" ON public.user_sessions;
 CREATE POLICY "Users can view their own sessions" ON public.user_sessions
   FOR SELECT USING (auth.uid() = user_id);
 
+DROP POLICY IF EXISTS "Users can update their own sessions" ON public.user_sessions;
 CREATE POLICY "Users can update their own sessions" ON public.user_sessions
   FOR UPDATE USING (auth.uid() = user_id);
 
+DROP POLICY IF EXISTS "Admins can manage all user sessions" ON public.user_sessions;
 CREATE POLICY "Admins can manage all user sessions" ON public.user_sessions
   FOR ALL USING (
     EXISTS (

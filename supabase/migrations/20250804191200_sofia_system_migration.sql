@@ -41,6 +41,8 @@ CREATE POLICY "sofia_food_access" ON sofia_food_analysis
   FOR ALL USING (auth.uid() = user_id);
 
 -- 6. Adicionar comentários para documentação
+-- Garantir coluna messages existe mesmo que a tabela tenha sido criada sem ela em versões anteriores
+ALTER TABLE sofia_conversations ADD COLUMN IF NOT EXISTS messages JSONB NOT NULL DEFAULT '[]';
 COMMENT ON TABLE sofia_conversations IS 'Conversas do usuário com a IA Sofia - Migrado da versão 76';
 COMMENT ON TABLE sofia_food_analysis IS 'Análises de alimentos feitas pela Sofia - Migrado da versão 76';
 COMMENT ON COLUMN sofia_conversations.messages IS 'Array JSON com histórico completo da conversa';

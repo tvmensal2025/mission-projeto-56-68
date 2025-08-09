@@ -1,14 +1,22 @@
 const { createClient } = require('@supabase/supabase-js');
 const { Resend } = require('resend');
 
-// Configuração do Supabase
-const supabaseUrl = 'https://hlrkoyywjpckdotimtik.supabase.co';
-const supabaseServiceKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhscmtveXl3anBja2RvdGltdGlrIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTczMjk3Mjk3NCwiZXhwIjoyMDQ4NTQ4OTc0fQ.Ej8Ej8Ej8Ej8Ej8Ej8Ej8Ej8Ej8Ej8Ej8Ej8Ej8Ej8';
+// Configuração do Supabase (usar variáveis de ambiente)
+const supabaseUrl = process.env.SUPABASE_URL;
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+if (!supabaseUrl || !supabaseServiceKey) {
+  throw new Error('Defina SUPABASE_URL e SUPABASE_SERVICE_ROLE_KEY nas variáveis de ambiente.');
+}
 
 const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-// Configuração do Resend
-const resend = new Resend('re_MaZUKsTe_7NJizbgHNhFNvXBRu75qgBjG');
+// Configuração do Resend (usar variável de ambiente)
+const resendApiKey = process.env.RESEND_API_KEY;
+if (!resendApiKey) {
+  throw new Error('Defina RESEND_API_KEY nas variáveis de ambiente.');
+}
+const resend = new Resend(resendApiKey);
 
 // Função para gerar HTML do relatório semanal
 function generateWeeklyReportHTML(user, data) {
@@ -208,7 +216,7 @@ async function generateAndSendWeeklyReport(userEmail, userName) {
 
     // Buscar dados do usuário
     const { data: user, error: userError } = await supabase
-      .from('user_profiles')
+      .from('profiles')
       .select('*')
       .eq('email', userEmail)
       .single();

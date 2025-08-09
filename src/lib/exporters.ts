@@ -30,3 +30,7 @@ export async function exportPDF(element: HTMLElement, filename = `cardapio-${Dat
 }
 
 
+
+
+
+

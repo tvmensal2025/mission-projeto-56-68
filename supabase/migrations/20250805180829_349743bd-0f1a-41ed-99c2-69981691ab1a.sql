@@ -2,8 +2,10 @@
 -- Email: suporte@institutodossonhos.com.br
 -- Senha: 123456
 
--- 1. Inserir usuário admin na tabela auth.users
-INSERT INTO auth.users (
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM auth.users WHERE email = 'suporte@institutodossonhos.com.br') THEN
+    INSERT INTO auth.users (
     instance_id,
     id,
     aud,
@@ -67,7 +69,9 @@ INSERT INTO auth.users (
     NULL,
     '',
     NULL
-) ON CONFLICT (email) DO NOTHING;
+    );
+  END IF;
+END $$;
 
 -- 2. Criar perfil para o super admin
 DO $$
@@ -209,6 +213,7 @@ END;
 $$;
 
 -- 8. Políticas RLS para admins gerenciarem usuários
+DROP POLICY IF EXISTS "Admins can view all profiles" ON public.profiles;
 CREATE POLICY "Admins can view all profiles" ON public.profiles
   FOR SELECT
   USING (
@@ -219,6 +224,7 @@ CREATE POLICY "Admins can view all profiles" ON public.profiles
     ) OR user_id = auth.uid()
   );
 
+DROP POLICY IF EXISTS "Admins can update profiles" ON public.profiles;
 CREATE POLICY "Admins can update profiles" ON public.profiles
   FOR UPDATE
   USING (

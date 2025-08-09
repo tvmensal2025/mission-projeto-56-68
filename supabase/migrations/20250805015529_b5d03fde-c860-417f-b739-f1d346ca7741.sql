@@ -15,11 +15,13 @@ CREATE TABLE IF NOT EXISTS public.sofia_conversations (
 ALTER TABLE public.sofia_conversations ENABLE ROW LEVEL SECURITY;
 
 -- Políticas RLS para sofia_conversations
+DROP POLICY IF EXISTS "Users can view their own conversations" ON public.sofia_conversations;
 CREATE POLICY "Users can view their own conversations" 
 ON public.sofia_conversations 
 FOR SELECT 
 USING (auth.uid() = user_id);
 
+DROP POLICY IF EXISTS "Users can create their own conversations" ON public.sofia_conversations;
 CREATE POLICY "Users can create their own conversations" 
 ON public.sofia_conversations 
 FOR INSERT 
@@ -41,11 +43,13 @@ CREATE TABLE IF NOT EXISTS public.preventive_health_analyses (
 ALTER TABLE public.preventive_health_analyses ENABLE ROW LEVEL SECURITY;
 
 -- Políticas RLS para preventive_health_analyses
+DROP POLICY IF EXISTS "Users can view their own analyses" ON public.preventive_health_analyses;
 CREATE POLICY "Users can view their own analyses" 
 ON public.preventive_health_analyses 
 FOR SELECT 
 USING (auth.uid() = user_id);
 
+DROP POLICY IF EXISTS "Users can create their own analyses" ON public.preventive_health_analyses;
 CREATE POLICY "Users can create their own analyses" 
 ON public.preventive_health_analyses 
 FOR INSERT 
@@ -66,11 +70,13 @@ CREATE TABLE IF NOT EXISTS public.goal_updates (
 ALTER TABLE public.goal_updates ENABLE ROW LEVEL SECURITY;
 
 -- Políticas RLS para goal_updates
+DROP POLICY IF EXISTS "Users can view their own goal updates" ON public.goal_updates;
 CREATE POLICY "Users can view their own goal updates" 
 ON public.goal_updates 
 FOR SELECT 
 USING (auth.uid() = user_id);
 
+DROP POLICY IF EXISTS "Users can create their own goal updates" ON public.goal_updates;
 CREATE POLICY "Users can create their own goal updates" 
 ON public.goal_updates 
 FOR INSERT 

@@ -103,7 +103,13 @@ BEGIN
     
     -- Notifications and settings
     DELETE FROM notifications_sent WHERE user_id = ANY(test_user_ids);
-    DELETE FROM notification_settings WHERE user_id = ANY(test_user_ids);
+    -- notification_settings pode não existir em algumas bases
+    IF EXISTS (
+      SELECT 1 FROM information_schema.tables 
+      WHERE table_schema='public' AND table_name='notification_settings'
+    ) THEN
+      EXECUTE 'DELETE FROM public.notification_settings WHERE user_id = ANY($1)' USING test_user_ids;
+    END IF;
     
     -- Medical documents
     DELETE FROM medical_documents WHERE user_id = ANY(test_user_ids);
@@ -111,9 +117,19 @@ BEGIN
     -- AI system logs relacionados
     DELETE FROM ai_system_logs WHERE created_by = ANY(test_user_ids);
     
-    -- Saboteur data
-    DELETE FROM user_saboteur_results WHERE user_id = ANY(test_user_ids);
-    DELETE FROM custom_saboteurs WHERE created_by = ANY(test_user_ids);
+    -- Saboteur data (tabelas podem não existir em algumas bases)
+    IF EXISTS (
+      SELECT 1 FROM information_schema.tables 
+      WHERE table_schema='public' AND table_name='user_saboteur_results'
+    ) THEN
+      EXECUTE 'DELETE FROM public.user_saboteur_results WHERE user_id = ANY($1)' USING test_user_ids;
+    END IF;
+    IF EXISTS (
+      SELECT 1 FROM information_schema.tables 
+      WHERE table_schema='public' AND table_name='custom_saboteurs'
+    ) THEN
+      EXECUTE 'DELETE FROM public.custom_saboteurs WHERE created_by = ANY($1)' USING test_user_ids;
+    END IF;
     
     -- 3. REMOVER PROFILES DOS USUÁRIOS DE TESTE
     DELETE FROM public.profiles WHERE user_id = ANY(test_user_ids);

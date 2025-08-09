@@ -9,16 +9,35 @@ const corsHeaders = {
 
 const openAIApiKey = Deno.env.get('OPENAI_API_KEY');
 const googleAIApiKey = Deno.env.get('GOOGLE_AI_API_KEY');
-// Flag para pausar/ativar GPT sem afetar outras funções
-const sofiaUseGpt = (Deno.env.get('SOFIA_USE_GPT') || 'true').toLowerCase() === 'true';
+// Modelo Gemini configurável; padrão mais preciso
+const geminiModel = (Deno.env.get('SOFIA_GEMINI_MODEL') || 'gemini-1.5-pro').trim();
+// Modo de porção: 'ai_strict' usa os números do Gemini; 'defaults' usa porções padrão
+const portionMode = (Deno.env.get('SOFIA_PORTION_MODE') || 'ai_strict').trim();
+const minPortionConfidence = Number(Deno.env.get('SOFIA_PORTION_CONFIDENCE_MIN') || '0.55');
+// Desativar GPT por padrão: vamos padronizar na família Gemini
+const sofiaUseGpt = (Deno.env.get('SOFIA_USE_GPT') || 'false').toLowerCase() === 'true';
 
-// 📸 Função auxiliar para converter imagem URL em base64 (para precisão)
-async function fetchImageAsBase64(url: string): Promise<string> {
+// 📸 Função auxiliar para converter imagem URL em base64 (retornando também o MIME)
+async function fetchImageAsBase64(url: string): Promise<{ base64: string; mime: string }> {
   try {
-    const response = await fetch(url);
+    const response = await fetch(url, {
+      headers: {
+        // Alguns CDNs bloqueiam agentes default; definir um user-agent ajuda a liberar
+        'User-Agent': 'Mozilla/5.0 (compatible; SofiaAI/1.0; +https://supabase.com)'
+      }
+    });
     const buffer = await response.arrayBuffer();
     const base64 = btoa(String.fromCharCode(...new Uint8Array(buffer)));
-    return base64;
+    // Detectar MIME pelo header ou pela extensão
+    let mime = response.headers.get('content-type') || '';
+    if (!mime) {
+      const lower = url.toLowerCase();
+      if (lower.endsWith('.png')) mime = 'image/png';
+      else if (lower.endsWith('.webp')) mime = 'image/webp';
+      else if (lower.endsWith('.gif')) mime = 'image/gif';
+      else mime = 'image/jpeg';
+    }
+    return { base64, mime };
   } catch (error) {
     console.log('❌ Erro ao converter imagem:', error);
     throw error;
@@ -225,6 +244,19 @@ const PORCOES_BRASILEIRAS: Record<string, number> = {
   'sal': 2
 };
 
+function isLiquidName(name: string): boolean {
+  const n = name.toLowerCase();
+  return (
+    n.includes('suco') ||
+    n.includes('refrigerante') ||
+    n.includes('água') || n.includes('agua') ||
+    n.includes('café') || n.includes('cafe') ||
+    n.includes('leite') ||
+    n.includes('vitamina') ||
+    n.includes('chá') || n.includes('cha')
+  );
+}
+
 // 🔍 Função para detectar combos de refeições
 function detectComboRefeicao(foods: string[]): {combo: string, alimentos: string[], calorias: number, descricao: string} | null {
   const normalizedFoods = foods.map(f => f.toLowerCase().trim());
@@ -374,7 +406,8 @@ serve(async (req) => {
     console.log('🤖 Chamando Google AI para análise inicial...');
     
     try {
-      const visionResponse = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${googleAIApiKey}`, {
+      const img = await fetchImageAsBase64(imageUrl);
+      const visionResponse = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:generateContent?key=${googleAIApiKey}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -407,8 +440,8 @@ REGRAS IMPORTANTES:
               },
               {
                 inline_data: {
-                  mime_type: "image/jpeg",
-                  data: await fetchImageAsBase64(imageUrl)
+                  mime_type: img.mime,
+                  data: img.base64
                 }
               }
             ]
@@ -448,119 +481,140 @@ REGRAS IMPORTANTES:
         isFood = false;
       }
 
-      // 🚀 ANÁLISE ADICIONAL COM OPENAI GPT-4O para maior precisão (controlado por flag)
-      if (isFood && openAIApiKey && sofiaUseGpt) {
-        console.log('🧠 Chamando OpenAI GPT-4o para análise detalhada...');
-        
-        const openAIResponse = await fetch('https://api.openai.com/v1/chat/completions', {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${openAIApiKey}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            model: 'gpt-4o',
-            messages: [
-              {
-                role: 'system',
-                content: `Você é um especialista em análise nutricional brasileira. Analise minuciosamente esta imagem de comida e identifique TODOS os ingredientes, temperos, molhos, acompanhamentos e bebidas presentes. 
+      // 🚀 Análise detalhada adicional COM GEMINI (substitui GPT)
+      if (isFood) {
+        console.log('🧠 Chamando Gemini para análise detalhada...');
 
-Seja extremamente detalhado e observe:
-- Grãos, cereais, farinhas (arroz, feijão, farofa, etc.)
-- Carnes e proteínas (tipo, preparo, corte)
-- Vegetais e verduras (crus, cozidos, refogados)  
-- Molhos e temperos (vinagrete, pimenta, azeite, etc.)
-- Bebidas e líquidos (sucos, refrigerantes, água, etc.)
-- Acompanhamentos (pães, torradas, etc.)
-
-Retorne APENAS um JSON válido com todos os itens encontrados.`
-              },
-              {
-                role: 'user',
-                content: [
+        try {
+          const detailedResponse = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:generateContent?key=${googleAIApiKey}`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              contents: [{
+                parts: [
                   {
-                    type: 'text',
-                    text: `Analise esta refeição e retorne um JSON com TODOS os ingredientes/alimentos/bebidas identificados:
-
+                    text: `Analise esta mesma imagem e retorne APENAS JSON válido com alto detalhamento e PORÇÕES ESTIMADAS:
 {
   "detailed_foods": ["item1", "item2", ...],
   "detailed_liquids": ["bebida1", "bebida2", ...],
   "cooking_methods": ["grelhado", "refogado", ...],
   "seasonings": ["tempero1", "molho1", ...],
-  "estimated_calories": número,
-  "confidence": 0.0-1.0
+  "estimated_calories": numero,
+  "confidence": 0.0-1.0,
+  "items": [
+    {
+      "name": "arroz branco",
+      "grams": 120,
+      "ml": null,
+      "method": "cozido",
+      "confidence": 0.85
+    },
+    {
+      "name": "suco de laranja",
+      "grams": null,
+      "ml": 200,
+      "method": "liquido",
+      "confidence": 0.9
+    }
+  ]
 }
 
-Base conhecida: ${foodKnowledge}
+BASE (pt-BR): ${foodKnowledge}
 
-Seja minucioso e identifique até pequenos detalhes como molhos, temperos e guarnições.`
+REGRAS:
+- Liste todos os alimentos/ingredientes, molhos, temperos e bebidas presentes
+- Seja específico nos tipos (ex.: feijão preto, arroz branco, frango grelhado, salada verde)
+- Estime gramas (sólidos) ou mL (líquidos) realistas por item
+- Não some itens duplicados; prefira mesclar em um único item com quantidade total
+- Não use markdown, não use comentários, apenas JSON`
                   },
                   {
-                    type: 'image_url',
-                    image_url: {
-                      url: imageUrl,
-                      detail: 'high'
+                    inline_data: {
+                      mime_type: img.mime,
+                      data: img.base64
                     }
                   }
                 ]
+              }],
+              generationConfig: {
+                temperature: 0.1,
+                maxOutputTokens: 1200
               }
-            ],
-            max_tokens: 1000,
-            temperature: 0.1
-          })
-        });
+            })
+          });
 
-        if (openAIResponse.ok) {
-          const openAIData = await openAIResponse.json();
-          const openAIText = openAIData.choices?.[0]?.message?.content || '';
-          console.log('🧠 Resposta detalhada do OpenAI:', openAIText);
+          if (detailedResponse.ok) {
+            const det = await detailedResponse.json();
+            const detailText = det.candidates?.[0]?.content?.parts?.[0]?.text || '';
+            try {
+              const detailJsonMatch = detailText.match(/```json\s*([\s\S]*?)\s*```/) || detailText.match(/\{[\s\S]*\}/);
+              if (detailJsonMatch) {
+                const detailed = JSON.parse(detailJsonMatch[1] || detailJsonMatch[0]);
+                const allFoods = [
+                  ...detectedFoods,
+                  ...detectedLiquids,
+                  ...(detailed.detailed_foods || []),
+                  ...(detailed.detailed_liquids || []),
+                  ...(detailed.seasonings || [])
+                ];
+                detectedFoods = removeDuplicatesAndEstimatePortions(allFoods.filter((x: string) => x && x.length > 0));
+                estimatedCalories = Math.max(estimatedCalories, detailed.estimated_calories || 0);
+                confidence = Math.max(confidence, detailed.confidence || 0);
 
-          try {
-            const openAIJson = openAIText.match(/\{[\s\S]*\}/);
-            if (openAIJson) {
-              const detailedAnalysis = JSON.parse(openAIJson[0]);
-              
-              // Combinar resultados do Google AI + OpenAI para máxima precisão
-              const allFoods = [
-                ...detectedFoods,
-                ...detectedLiquids,
-                ...(detailedAnalysis.detailed_foods || []),
-                ...(detailedAnalysis.detailed_liquids || []),
-                ...(detailedAnalysis.seasonings || [])
-              ];
+                // Preferir itens com porção estimada pelo Gemini, se existir e confiável
+                const aiItemsRaw: Array<{name: string; grams?: number|null; ml?: number|null; method?: string; confidence?: number}> = Array.isArray(detailed.items) ? detailed.items : [];
+                const aiItems: Array<{name: string; grams?: number; ml?: number; method?: string; confidence?: number}> = aiItemsRaw
+                  .filter((it) => typeof it?.name === 'string' && (it.grams || it.ml))
+                  .map((it) => ({
+                    name: it.name,
+                    grams: it.grams ?? undefined,
+                    ml: it.ml ?? undefined,
+                    method: it.method,
+                    confidence: typeof it.confidence === 'number' ? it.confidence : undefined
+                  }));
 
-              // 🔧 CORRIGIR DUPLICATAS E APLICAR ESTIMATIVAS REALISTAS
+                // Sanear valores: clamps e normalização
+                function clamp(num: number, min: number, max: number): number { return Math.max(min, Math.min(max, num)); }
+                const aiItemsClean = aiItems.map((it) => {
+                  const isLiquid = isLiquidName(it.name) || (it.method || '').toLowerCase() === 'liquido' || (it.ml && it.ml > 0);
+                  const grams = it.grams && !isLiquid ? clamp(Math.round(it.grams), 10, 800) : undefined;
+                  const ml = it.ml && isLiquid ? clamp(Math.round(it.ml), 30, 1000) : undefined;
+                  return { ...it, grams, ml };
+                });
+
+                // Remover entradas de baixa confiança no modo estrito
+                const aiItemsFiltered = portionMode === 'ai_strict'
+                  ? aiItemsClean.filter((it) => (it.confidence ?? 1) >= minPortionConfidence)
+                  : aiItemsClean;
+
+                // Se muitos itens ou muito extremos, limitar total
+                let totalWeight = aiItemsFiltered.reduce((acc, it) => acc + (it.grams || 0), 0);
+                if (totalWeight > 1500) {
+                  const scale = 1500 / totalWeight;
+                  aiItemsFiltered.forEach((it) => { if (it.grams) it.grams = Math.round(it.grams * scale); });
+                }
+
+                // Persistir itens AI em variável para uso na chamada determinística
+                (globalThis as any).__AI_PORTION_ITEMS__ = aiItemsFiltered;
+                console.log('🎯 Análise combinada final (Gemini):', { totalItems: detectedFoods.length, estimatedCalories, confidence });
+              }
+            } catch (e) {
+              console.log('⚠️ Erro ao parsear JSON detalhado do Gemini, mantendo análise inicial:', e);
+              const allFoods = [...detectedFoods, ...detectedLiquids];
               detectedFoods = removeDuplicatesAndEstimatePortions(allFoods.filter(item => item && item.length > 0));
-              
-              // Usar estimativa mais alta (mais conservadora)
-              estimatedCalories = Math.max(estimatedCalories, detailedAnalysis.estimated_calories || 0);
-              
-              // Usar confiança média entre os dois modelos
-              confidence = Math.max(confidence, detailedAnalysis.confidence || 0);
-              
-              console.log('🎯 Análise combinada final:', { 
-                detectedFoods, 
-                totalItems: detectedFoods.length, 
-                estimatedCalories, 
-                confidence 
-              });
             }
-          } catch (openAIParseError) {
-            console.log('⚠️ Erro ao parsear OpenAI, usando apenas Google AI:', openAIParseError);
+          } else {
+            console.log('⚠️ Gemini detalhado indisponível, mantendo análise inicial');
+            const allFoods = [...detectedFoods, ...detectedLiquids];
+            detectedFoods = removeDuplicatesAndEstimatePortions(allFoods.filter(item => item && item.length > 0));
           }
-        } else {
-          console.log('⚠️ OpenAI indisponível, usando apenas Google AI');
+        } catch (err) {
+          console.log('⚠️ Falha na análise detalhada com Gemini:', err);
+          const allFoods = [...detectedFoods, ...detectedLiquids];
+          detectedFoods = removeDuplicatesAndEstimatePortions(allFoods.filter(item => item && item.length > 0));
         }
-      } else if (!openAIApiKey || !sofiaUseGpt) {
-        if (!sofiaUseGpt) {
-          console.log('⏸️ GPT desativado por SOFIA_USE_GPT=false, usando apenas Google AI');
-        } else {
-          console.log('⚠️ OpenAI API key não configurada, usando apenas Google AI');
-        }
-        
-        // Aplicar remoção de duplicatas mesmo só com Google AI
-        const allFoods = [...detectedFoods, ...detectedLiquids];
-        detectedFoods = removeDuplicatesAndEstimatePortions(allFoods.filter(item => item && item.length > 0));
       }
 
     } catch (error) {
@@ -572,7 +626,7 @@ Seja minucioso e identifique até pequenos detalhes como molhos, temperos e guar
     console.log('🔍 Verificando se detectou comida...');
     
     // Se não detectou comida ou confiança baixa
-    if (!isFood || confidence < 0.7) {
+    if (!isFood || confidence < 0.5) {
       console.log('❌ Comida não detectada ou confiança baixa');
       
       return new Response(JSON.stringify({
@@ -607,7 +661,8 @@ Ou você pode me contar o que está comendo! 😉✨`,
     
     if (comboDetected) {
       console.log('🎯 Combo detectado:', comboDetected);
-      comboInfo = `\n🍽️ **COMBO DETECTADO:** ${comboDetected.descricao}\n🔥 **Calorias estimadas:** ${comboDetected.calorias} kcal\n\n`;
+      // Não usar calorias estimadas do combo no texto final (priorizar cálculo determinístico)
+      comboInfo = `\n🍽️ **COMBO DETECTADO:** ${comboDetected.descricao}\n`;
       foodList = comboDetected.alimentos.map(food => `• ${food}`).join('\n');
     } else {
       foodList = Array.isArray(detectedFoods) && detectedFoods.length > 0 && typeof detectedFoods[0] === 'object'
@@ -615,12 +670,78 @@ Ou você pode me contar o que está comendo! 😉✨`,
         : detectedFoods.map(food => `• ${food}`).join('\n');
     }
 
+    // 🔢 Integração determinística: chamar nutrition-calc com itens detectados
+    let calcItems: Array<{ name: string; grams?: number; ml?: number; state?: string }>; 
+    const aiPortionItems = (globalThis as any).__AI_PORTION_ITEMS__ as Array<{name: string; grams?: number; ml?: number; method?: string}> | undefined;
+    if (aiPortionItems && aiPortionItems.length > 0) {
+      // Preferir itens estimados pela IA
+      calcItems = aiPortionItems.map((it) => ({
+        name: it.name,
+        grams: isLiquidName(it.name) ? undefined : it.grams,
+        ml: isLiquidName(it.name) ? it.ml : undefined,
+        state: it.method
+      }));
+    } else {
+      // Fallback: porções padrão
+      calcItems = (Array.isArray(detectedFoods) && detectedFoods.length > 0 && typeof detectedFoods[0] === 'object'
+        ? detectedFoods as Array<{nome: string, quantidade: number}>
+        : (detectedFoods as string[]).map((n) => ({ nome: n, quantidade: PORCOES_BRASILEIRAS[n.toLowerCase()] || (isLiquidName(n) ? 200 : 100) }))
+      )
+        .map((f) => ({
+          name: f.nome,
+          grams: isLiquidName(f.nome) ? undefined : f.quantidade,
+          ml: isLiquidName(f.nome) ? f.quantidade : undefined,
+        }));
+    }
+
+    let calcTotals: any = null;
+    let calcResolved: any[] | null = null;
+    try {
+      const calcRes = await fetch(`${supabaseUrl}/functions/v1/nutrition-calc`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${supabaseServiceKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ items: calcItems, locale: 'pt-BR' })
+      });
+      if (calcRes.ok) {
+        const calcJson = await calcRes.json();
+        calcTotals = calcJson?.totals || null;
+        calcResolved = Array.isArray(calcJson?.resolved) ? calcJson.resolved : null;
+      }
+    } catch (e) {
+      console.log('⚠️ Erro ao chamar nutrition-calc:', e);
+    }
+
+    let macrosBlock = '';
+    if (calcTotals) {
+      // Cálculo por grama com base no peso efetivo total
+      let totalGrams = 0;
+      if (calcResolved) {
+        try {
+          totalGrams = calcResolved.reduce((acc: number, it: any) => acc + (Number(it.effective_grams) || 0), 0);
+        } catch (_e) { totalGrams = 0; }
+      }
+      const perGram = totalGrams > 0 ? {
+        kcal_pg: calcTotals.kcal / totalGrams,
+        protein_pg: calcTotals.protein_g / totalGrams,
+        carbs_pg: calcTotals.carbs_g / totalGrams,
+        fat_pg: calcTotals.fat_g / totalGrams,
+        fiber_pg: calcTotals.fiber_g / totalGrams,
+      } : null;
+
+      const perGramText = perGram ? `\n- Por grama: ${perGram.kcal_pg.toFixed(2)} kcal/g, P ${perGram.protein_pg.toFixed(3)} g/g, C ${perGram.carbs_pg.toFixed(3)} g/g, G ${perGram.fat_pg.toFixed(3)} g/g` : '';
+
+      macrosBlock = `📊 Nutrientes (determinístico):\n- Calorias: ${Math.round(calcTotals.kcal)} kcal\n- Proteínas: ${calcTotals.protein_g.toFixed(1)} g\n- Carboidratos: ${calcTotals.carbs_g.toFixed(1)} g\n- Gorduras: ${calcTotals.fat_g.toFixed(1)} g\n- Fibras: ${calcTotals.fiber_g.toFixed(1)} g\n- Sódio: ${calcTotals.sodium_mg.toFixed(0)} mg${perGramText}\n\n`;
+    }
+
     const finalMessage = `Oi ${actualUserName}! 😊 
 
 📸 Analisei sua refeição e identifiquei:
 ${comboInfo}${foodList}
 
-🤔 Esses alimentos estão corretos?`;
+${macrosBlock}🤔 Esses alimentos estão corretos?`;
 
     // 💾 Salvar análise no banco ANTES da confirmação (corrigido para guest users)
     let savedAnalysis = null;
@@ -696,14 +817,16 @@ ${comboInfo}${foodList}
         personality: 'amigavel',
         foods_detected: detectedFoods,
         confidence: confidence,
-        estimated_calories: estimatedCalories,
+        estimated_calories: calcTotals ? Math.round(calcTotals.kcal) : estimatedCalories,
+        nutrition_totals: calcTotals || null,
         confirmation_required: true
       },
       food_detection: {
         foods_detected: detectedFoods,
         is_food: true,
         confidence: confidence,
-        estimated_calories: estimatedCalories,
+        estimated_calories: calcTotals ? Math.round(calcTotals.kcal) : estimatedCalories,
+        nutrition_totals: calcTotals || null,
         meal_type: userContext?.currentMeal || 'refeicao'
       },
       alimentos_identificados: detectedFoods // Para compatibilidade

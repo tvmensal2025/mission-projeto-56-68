@@ -63,6 +63,51 @@ Vou ajustar minha análise para ser mais precisa na próxima vez! Continue envia
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
+    // Helpers para gerar itens determinísticos
+    function isLiquidName(name: string): boolean {
+      const n = (name || '').toLowerCase();
+      return n.includes('suco') || n.includes('refrigerante') || n.includes('água') || n.includes('agua') || n.includes('café') || n.includes('cafe') || n.includes('leite') || n.includes('vitamina') || n.includes('chá') || n.includes('cha');
+    }
+    const DEFAULT_PORTIONS: Record<string, number> = {
+      'ovo': 50,
+      'ovos': 100,
+      'arroz': 100,
+      'feijão': 80,
+      'feijao': 80,
+      'frango grelhado': 150,
+      'carne bovina': 150,
+      'salada': 50,
+      'batata': 150
+    };
+    function guessPortion(name: string): number {
+      const key = (name || '').toLowerCase().trim();
+      if (DEFAULT_PORTIONS[key]) return DEFAULT_PORTIONS[key];
+      if (isLiquidName(key)) return 200; // mL
+      if (key.includes('carne') || key.includes('frango') || key.includes('peixe')) return 150;
+      if (key.includes('arroz') || key.includes('massa') || key.includes('macarr') || key.includes('batata')) return 100;
+      if (key.includes('salada') || key.includes('verdura') || key.includes('legume')) return 50;
+      return 100; // padrão
+    }
+    async function calcDeterministicTotals(names: string[]): Promise<{kcal:number, protein_g:number, carbs_g:number, fat_g:number, fiber_g:number, sodium_mg:number} | null> {
+      try {
+        const items = names.map((n) => ({
+          name: n,
+          grams: isLiquidName(n) ? undefined : guessPortion(n),
+          ml: isLiquidName(n) ? guessPortion(n) : undefined
+        }));
+        const res = await fetch(`${supabaseUrl}/functions/v1/nutrition-calc`, {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${supabaseServiceKey}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ items, locale: 'pt-BR' })
+        });
+        if (!res.ok) return null;
+        const json = await res.json();
+        return json?.totals || null;
+      } catch (_e) {
+        return null;
+      }
+    }
+
     // Buscar a análise original
     const { data: originalAnalysis, error: fetchError } = await supabase
       .from('sofia_food_analysis')
@@ -91,15 +136,15 @@ Vou ajustar minha análise para ser mais precisa na próxima vez! Continue envia
     const userName = originalAnalysis.user_name || 'usuário';
     let sofiaResponse = '';
     let estimatedCalories = 0;
+    let deterministicTotals: any = null;
 
     if (confirmed) {
-      // USUÁRIO CONFIRMOU - Usar calorias já estimadas ou calcular
+      // USUÁRIO CONFIRMOU - Calcular determinístico via nutrition-calc
       const confirmedFoods = originalAnalysis.foods_detected || [];
+      deterministicTotals = await calcDeterministicTotals(confirmedFoods);
+      estimatedCalories = deterministicTotals ? Math.round(deterministicTotals.kcal) : (originalAnalysis.total_calories || Math.max(300, confirmedFoods.length * 150 + Math.floor(Math.random() * 150)));
       
-      // Usar estimativa anterior ou calcular baseado nos alimentos
-      estimatedCalories = originalAnalysis.total_calories || Math.max(300, confirmedFoods.length * 150 + Math.floor(Math.random() * 150));
-      
-      // Gerar resposta nutricional detalhada
+      // Gerar resposta nutricional detalhada (determinístico se disponível)
       const hasLiquids = confirmedFoods.some(food => 
         food.toLowerCase().includes('suco') || 
         food.toLowerCase().includes('água') || 
@@ -110,10 +155,10 @@ Vou ajustar minha análise para ser mais precisa na próxima vez! Continue envia
         food.toLowerCase().includes('vitamina')
       );
 
-      // Estimativas nutricionais baseadas nas calorias
-      const estimatedCarbs = Math.round(estimatedCalories * 0.5 / 4); // 50% das calorias de carbs
-      const estimatedProteins = Math.round(estimatedCalories * 0.25 / 4); // 25% das calorias de proteínas  
-      const estimatedFats = Math.round(estimatedCalories * 0.25 / 9); // 25% das calorias de gorduras
+      // Números determinísticos ou estimativa por macros
+      const carbs = deterministicTotals ? Number(deterministicTotals.carbs_g).toFixed(1) : Math.round(estimatedCalories * 0.5 / 4).toString();
+      const proteins = deterministicTotals ? Number(deterministicTotals.protein_g).toFixed(1) : Math.round(estimatedCalories * 0.25 / 4).toString();
+      const fats = deterministicTotals ? Number(deterministicTotals.fat_g).toFixed(1) : Math.round(estimatedCalories * 0.25 / 9).toString();
 
       const liquidsList = hasLiquids ? confirmedFoods.filter(food => 
         food.toLowerCase().includes('suco') || 
@@ -129,10 +174,10 @@ Vou ajustar minha análise para ser mais precisa na próxima vez! Continue envia
 
       sofiaResponse = `🍽️ Prato identificado: ${solidFoods.join(', ')}${hasLiquids ? `\n💧 Líquidos: ${liquidsList.join(', ')}` : ''}
 
-🔍 Estimativa nutricional:
-• Carboidratos: ${estimatedCarbs}g  
-• Proteínas: ${estimatedProteins}g  
-• Gorduras: ${estimatedFats}g  
+🔍 Estimativa nutricional${deterministicTotals ? ' (determinístico)' : ''}:
+• Carboidratos: ${carbs}g  
+• Proteínas: ${proteins}g  
+• Gorduras: ${fats}g  
 • Calorias totais: ${Math.round(estimatedCalories)} kcal
 
 🔒 Salvo com sucesso. Você está no controle!`;
@@ -164,7 +209,8 @@ Vou ajustar minha análise para ser mais precisa na próxima vez! Continue envia
         },
         nutrition_analysis: {
           estimated_calories: Math.round(estimatedCalories),
-          confirmed_by_user: true
+          confirmed_by_user: true,
+          totals: deterministicTotals || null
         },
         sofia_analysis: {
           analysis: sofiaResponse,
@@ -181,7 +227,8 @@ Vou ajustar minha análise para ser mais precisa na próxima vez! Continue envia
 
       if (userCorrections && userCorrections.alimentos) {
         const correctedFoods = userCorrections.alimentos;
-        estimatedCalories = Math.max(300, correctedFoods.length * 140 + Math.floor(Math.random() * 200));
+        deterministicTotals = await calcDeterministicTotals(correctedFoods);
+        estimatedCalories = deterministicTotals ? Math.round(deterministicTotals.kcal) : Math.max(300, correctedFoods.length * 140 + Math.floor(Math.random() * 200));
         
         // Usar função SQL para resposta formatada das calorias
         const { data: formattedResponse } = await supabase
@@ -191,11 +238,14 @@ Vou ajustar minha análise para ser mais precisa na próxima vez! Continue envia
             foods: correctedFoods
           });
 
+        const carbs2 = deterministicTotals ? Number(deterministicTotals.carbs_g).toFixed(1) : undefined;
+        const proteins2 = deterministicTotals ? Number(deterministicTotals.protein_g).toFixed(1) : undefined;
+        const fats2 = deterministicTotals ? Number(deterministicTotals.fat_g).toFixed(1) : undefined;
+        const detBlock = deterministicTotals ? `\n\n🔍 Estimativa nutricional (determinístico):\n• Carboidratos: ${carbs2}g\n• Proteínas: ${proteins2}g\n• Gorduras: ${fats2}g\n• Calorias totais: ${Math.round(estimatedCalories)} kcal` : '';
+
         sofiaResponse = formattedResponse || `Perfeito, ${userName}! ✅
 
-✏️ Anotei suas correções: ${correctedFoods.join(', ')}
-
-🔥 Estimativa calórica corrigida: aproximadamente ${Math.round(estimatedCalories)} kcal
+✏️ Anotei suas correções: ${correctedFoods.join(', ')}${detBlock}
 
 Isso me ajuda muito a melhorar! 🤖💡 Continue compartilhando suas refeições comigo! ✨`;
 
@@ -228,7 +278,8 @@ Isso me ajuda muito a melhorar! 🤖💡 Continue compartilhando suas refeiçõe
           },
           nutrition_analysis: {
             estimated_calories: Math.round(estimatedCalories),
-            corrected_by_user: true
+            corrected_by_user: true,
+            totals: deterministicTotals || null
           },
           sofia_analysis: {
             analysis: sofiaResponse,
@@ -269,6 +320,7 @@ Continue enviando suas refeições - estou sempre aprendendo para te ajudar melh
       success: true,
       sofia_response: sofiaResponse,
       estimated_calories: Math.round(estimatedCalories),
+      totals: deterministicTotals || null,
       confirmed: confirmed || !!userCorrections?.alimentos
     }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },

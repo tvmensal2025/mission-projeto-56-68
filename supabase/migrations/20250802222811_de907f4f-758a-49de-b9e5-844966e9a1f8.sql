@@ -27,6 +27,7 @@ CREATE POLICY "Users can insert their own sessions"
   WITH CHECK (auth.uid() = user_id);
 
 -- 3. Política para admins gerenciarem todas as sessões
+DROP POLICY IF EXISTS "Admins can manage all user sessions" ON user_sessions;
 CREATE POLICY "Admins can manage all user sessions"
   ON user_sessions 
   FOR ALL

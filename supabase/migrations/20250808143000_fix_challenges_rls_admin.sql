@@ -14,6 +14,7 @@ DROP POLICY IF EXISTS "Users can update own challenges" ON public.challenges;
 DROP POLICY IF EXISTS "Users can delete own challenges" ON public.challenges;
 
 -- Leitura: permitir SELECT para usuários autenticados (admin consegue ver tudo no painel)
+DROP POLICY IF EXISTS "challenges_read_all_auth" ON public.challenges;
 CREATE POLICY "challenges_read_all_auth" 
 ON public.challenges
 FOR SELECT TO authenticated
@@ -21,6 +22,7 @@ USING (true);
 
 -- Gerenciamento: somente ADMIN pode inserir/atualizar/deletar
 -- Critério de admin: possuir perfil com role = 'admin' (ou admin_level definido)
+DROP POLICY IF EXISTS "challenges_admin_manage" ON public.challenges;
 CREATE POLICY "challenges_admin_manage" 
 ON public.challenges
 FOR ALL TO authenticated
@@ -28,14 +30,14 @@ USING (
   EXISTS (
     SELECT 1 FROM public.profiles p 
     WHERE p.user_id = auth.uid() 
-      AND (p.role = 'admin' OR COALESCE(p.admin_level, 0) > 0)
+      AND p.role = 'admin'
   )
 )
 WITH CHECK (
   EXISTS (
     SELECT 1 FROM public.profiles p 
     WHERE p.user_id = auth.uid() 
-      AND (p.role = 'admin' OR COALESCE(p.admin_level, 0) > 0)
+      AND p.role = 'admin'
   )
 );
 
@@ -60,6 +62,10 @@ CREATE TRIGGER set_challenge_creator_trigger
 DO $$ BEGIN
   PERFORM 1; 
 END $$;
+
+
+
+
 
 
 

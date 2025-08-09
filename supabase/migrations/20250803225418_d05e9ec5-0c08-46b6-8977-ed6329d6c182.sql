@@ -8,16 +8,19 @@ DROP POLICY IF EXISTS "Users can update their own sessions" ON public.user_sessi
 DROP POLICY IF EXISTS "Admins can view all sessions" ON public.user_sessions;
 DROP POLICY IF EXISTS "Everyone can view active sessions" ON public.sessions;
 
--- Recriar políticas RLS corretas para PROFILES
+DROP POLICY IF EXISTS "Users can view their own profile" ON public.profiles;
 CREATE POLICY "Users can view their own profile" ON public.profiles
   FOR SELECT USING (auth.uid() = user_id);
 
+DROP POLICY IF EXISTS "Users can update their own profile" ON public.profiles;
 CREATE POLICY "Users can update their own profile" ON public.profiles
   FOR UPDATE USING (auth.uid() = user_id);
 
+DROP POLICY IF EXISTS "Users can create their own profile" ON public.profiles;
 CREATE POLICY "Users can create their own profile" ON public.profiles
   FOR INSERT WITH CHECK (auth.uid() = user_id);
 
+DROP POLICY IF EXISTS "Admins can view all profiles" ON public.profiles;
 CREATE POLICY "Admins can view all profiles" ON public.profiles
   FOR SELECT USING (
     EXISTS (
@@ -28,12 +31,15 @@ CREATE POLICY "Admins can view all profiles" ON public.profiles
   );
 
 -- Recriar políticas RLS corretas para USER_SESSIONS
+DROP POLICY IF EXISTS "Users can view their own sessions" ON public.user_sessions;
 CREATE POLICY "Users can view their own sessions" ON public.user_sessions
   FOR SELECT USING (auth.uid() = user_id);
 
+DROP POLICY IF EXISTS "Users can update their own sessions" ON public.user_sessions;
 CREATE POLICY "Users can update their own sessions" ON public.user_sessions
   FOR UPDATE USING (auth.uid() = user_id);
 
+DROP POLICY IF EXISTS "Admins can manage all user sessions" ON public.user_sessions;
 CREATE POLICY "Admins can manage all user sessions" ON public.user_sessions
   FOR ALL USING (
     EXISTS (
@@ -44,9 +50,11 @@ CREATE POLICY "Admins can manage all user sessions" ON public.user_sessions
   );
 
 -- Recriar políticas RLS corretas para SESSIONS
+DROP POLICY IF EXISTS "Everyone can view active sessions" ON public.sessions;
 CREATE POLICY "Everyone can view active sessions" ON public.sessions
   FOR SELECT USING (is_active = true);
 
+DROP POLICY IF EXISTS "Admins can manage sessions" ON public.sessions;
 CREATE POLICY "Admins can manage sessions" ON public.sessions
   FOR ALL USING (
     EXISTS (
@@ -58,12 +66,10 @@ CREATE POLICY "Admins can manage sessions" ON public.sessions
 
 -- 5. CORRIGIR POLÍTICAS PARA COURSES E MÓDULOS
 DROP POLICY IF EXISTS "Everyone can view published courses" ON public.courses;
-DROP POLICY IF EXISTS "Everyone can view course modules" ON public.course_modules;
-DROP POLICY IF EXISTS "Everyone can view lessons" ON public.lessons;
-
 CREATE POLICY "Everyone can view published courses" ON public.courses
   FOR SELECT USING (is_published = true);
 
+DROP POLICY IF EXISTS "Admins can manage courses" ON public.courses;
 CREATE POLICY "Admins can manage courses" ON public.courses
   FOR ALL USING (
     EXISTS (
@@ -73,9 +79,11 @@ CREATE POLICY "Admins can manage courses" ON public.courses
     )
   );
 
+DROP POLICY IF EXISTS "Everyone can view course modules" ON public.course_modules;
 CREATE POLICY "Everyone can view course modules" ON public.course_modules
   FOR SELECT USING (true);
 
+DROP POLICY IF EXISTS "Admins can manage course modules" ON public.course_modules;
 CREATE POLICY "Admins can manage course modules" ON public.course_modules
   FOR ALL USING (
     EXISTS (
@@ -85,9 +93,11 @@ CREATE POLICY "Admins can manage course modules" ON public.course_modules
     )
   );
 
+DROP POLICY IF EXISTS "Everyone can view lessons" ON public.lessons;
 CREATE POLICY "Everyone can view lessons" ON public.lessons
   FOR SELECT USING (true);
 
+DROP POLICY IF EXISTS "Admins can manage lessons" ON public.lessons;
 CREATE POLICY "Admins can manage lessons" ON public.lessons
   FOR ALL USING (
     EXISTS (

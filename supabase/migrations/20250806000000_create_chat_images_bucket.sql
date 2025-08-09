@@ -51,6 +51,14 @@ CREATE TABLE IF NOT EXISTS public.food_analysis (
 -- Habilitar RLS na tabela food_analysis
 ALTER TABLE public.food_analysis ENABLE ROW LEVEL SECURITY;
 
+-- Garantir colunas mínimas quando a tabela já existe
+ALTER TABLE public.food_analysis ADD COLUMN IF NOT EXISTS image_url TEXT;
+ALTER TABLE public.food_analysis ADD COLUMN IF NOT EXISTS analysis_text TEXT;
+ALTER TABLE public.food_analysis ADD COLUMN IF NOT EXISTS meal_type TEXT;
+ALTER TABLE public.food_analysis ADD COLUMN IF NOT EXISTS user_context JSONB;
+ALTER TABLE public.food_analysis ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW();
+ALTER TABLE public.food_analysis ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
+
 -- Criar políticas para a tabela food_analysis
 DROP POLICY IF EXISTS "Users can view their own food analysis" ON public.food_analysis;
 DROP POLICY IF EXISTS "Users can insert their own food analysis" ON public.food_analysis;
@@ -67,10 +75,23 @@ WITH CHECK (auth.uid() = user_id);
 CREATE INDEX IF NOT EXISTS idx_food_analysis_user_id ON public.food_analysis(user_id);
 CREATE INDEX IF NOT EXISTS idx_food_analysis_created_at ON public.food_analysis(created_at);
 
--- Comentários para documentação
-COMMENT ON TABLE public.food_analysis IS 'Armazena análises de imagens de alimentos feitas pela Sofia';
-COMMENT ON COLUMN public.food_analysis.user_id IS 'ID do usuário que enviou a imagem';
-COMMENT ON COLUMN public.food_analysis.image_url IS 'URL da imagem analisada';
-COMMENT ON COLUMN public.food_analysis.analysis_text IS 'Texto da análise gerada pela Sofia';
-COMMENT ON COLUMN public.food_analysis.meal_type IS 'Tipo de refeição (café da manhã, almoço, jantar, lanche)';
-COMMENT ON COLUMN public.food_analysis.user_context IS 'Contexto do usuário no momento da análise';
+-- Comentários para documentação (somente se colunas existirem)
+DO $$
+BEGIN
+  EXECUTE 'COMMENT ON TABLE public.food_analysis IS ''Armazena análises de imagens de alimentos feitas pela Sofia''';
+  IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='food_analysis' AND column_name='user_id') THEN
+    EXECUTE 'COMMENT ON COLUMN public.food_analysis.user_id IS ''ID do usuário que enviou a imagem''';
+  END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='food_analysis' AND column_name='image_url') THEN
+    EXECUTE 'COMMENT ON COLUMN public.food_analysis.image_url IS ''URL da imagem analisada''';
+  END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='food_analysis' AND column_name='analysis_text') THEN
+    EXECUTE 'COMMENT ON COLUMN public.food_analysis.analysis_text IS ''Texto da análise gerada pela Sofia''';
+  END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='food_analysis' AND column_name='meal_type') THEN
+    EXECUTE 'COMMENT ON COLUMN public.food_analysis.meal_type IS ''Tipo de refeição (café da manhã, almoço, jantar, lanche)''';
+  END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='food_analysis' AND column_name='user_context') THEN
+    EXECUTE 'COMMENT ON COLUMN public.food_analysis.user_context IS ''Contexto do usuário no momento da análise''';
+  END IF;
+END $$;

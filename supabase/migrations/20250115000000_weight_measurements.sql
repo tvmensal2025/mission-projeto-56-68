@@ -161,8 +161,8 @@ CREATE POLICY "Users can update own profile" ON user_physical_profiles
     FOR UPDATE USING (auth.uid() = user_id);
 
 -- Inserir dados de exemplo (remover em produção)
-INSERT INTO user_physical_profiles (user_id, height_cm, birth_date, gender, objetivo) VALUES
--- Usar UUIDs reais dos usuários existentes quando disponível
-(gen_random_uuid(), 179, '1973-09-20', 'M', 'perder_peso'),
-(gen_random_uuid(), 165, '1985-03-15', 'F', 'manter_peso'),
-(gen_random_uuid(), 175, '1978-11-08', 'M', 'ganhar_massa');
+-- DESABILITADO para evitar FK inválida em ambientes sem usuários
+-- INSERT INTO user_physical_profiles (user_id, height_cm, birth_date, gender, objetivo) VALUES
+-- (gen_random_uuid(), 179, '1973-09-20', 'M', 'perder_peso'),
+-- (gen_random_uuid(), 165, '1985-03-15', 'F', 'manter_peso'),
+-- (gen_random_uuid(), 175, '1978-11-08', 'M', 'ganhar_massa');

@@ -314,7 +314,38 @@ const SofiaConfirmationModal: React.FC<SofiaConfirmationModalProps> = ({
       console.log('✅ Confirmação processada:', data);
 
       if (data.success) {
-        onConfirmation(data.sofia_response, data.estimated_calories);
+        // Preferir exibir os totais determinísticos retornados pela confirmação
+        const totals = data?.totals as { kcal: number; protein_g: number; carbs_g: number; fat_g: number; fiber_g?: number; sodium_mg?: number } | null;
+        let message: string = data?.sofia_response || '';
+
+        if (totals) {
+          const solidTotalGrams = foodItems
+            .filter((i) => i && i.unit === 'g')
+            .reduce((acc, i) => acc + (Number(i.quantity) || 0), 0);
+
+          const perGram = solidTotalGrams > 0 ? {
+            kcal: totals.kcal / solidTotalGrams,
+            p: totals.protein_g / solidTotalGrams,
+            c: totals.carbs_g / solidTotalGrams,
+            f: totals.fat_g / solidTotalGrams,
+          } : null;
+
+          const per100 = solidTotalGrams > 0 ? {
+            kcal: (totals.kcal / solidTotalGrams) * 100,
+            p: (totals.protein_g / solidTotalGrams) * 100,
+            c: (totals.carbs_g / solidTotalGrams) * 100,
+            f: (totals.fat_g / solidTotalGrams) * 100,
+          } : null;
+
+          const foodsList = foodItems.map(i => i.name).join(', ');
+          const block = `🍽️ Prato identificado: ${foodsList}\n\n📊 Nutrientes (determinístico)\n- Calorias: ${Math.round(totals.kcal)} kcal\n- Proteínas: ${totals.protein_g.toFixed(1)} g\n- Carboidratos: ${totals.carbs_g.toFixed(1)} g\n- Gorduras: ${totals.fat_g.toFixed(1)} g` +
+            (perGram ? `\n- Por grama: ${perGram.kcal.toFixed(2)} kcal/g, P ${perGram.p.toFixed(3)} g/g, C ${perGram.c.toFixed(3)} g/g, G ${perGram.f.toFixed(3)} g/g` : '') +
+            (per100 ? `\n- Por 100 g: ${per100.kcal.toFixed(0)} kcal, P ${per100.p.toFixed(1)} g, C ${per100.c.toFixed(1)} g, G ${per100.f.toFixed(1)} g` : '');
+
+          message = block;
+        }
+
+        onConfirmation(message, data.estimated_calories);
         toast.success('✅ Análise confirmada pela Sofia!');
         onClose();
       } else {

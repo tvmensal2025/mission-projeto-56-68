@@ -12,13 +12,15 @@ CREATE TABLE IF NOT EXISTS public.sofia_conversations (
 -- Habilitar RLS
 ALTER TABLE public.sofia_conversations ENABLE ROW LEVEL SECURITY;
 
--- Criar políticas RLS para que usuários vejam apenas suas conversas
-CREATE POLICY IF NOT EXISTS "Users can view own conversations" 
+-- Idempotência: substituir IF NOT EXISTS por verificação/dropar antes
+DROP POLICY IF EXISTS "Users can view own conversations" ON public.sofia_conversations;
+CREATE POLICY "Users can view own conversations" 
 ON public.sofia_conversations 
 FOR SELECT 
 USING (auth.uid() = user_id);
 
-CREATE POLICY IF NOT EXISTS "Users can insert own conversations" 
+DROP POLICY IF EXISTS "Users can insert own conversations" ON public.sofia_conversations;
+CREATE POLICY "Users can insert own conversations" 
 ON public.sofia_conversations 
 FOR INSERT 
 WITH CHECK (auth.uid() = user_id);
@@ -42,18 +44,21 @@ CREATE TABLE IF NOT EXISTS public.profiles (
 -- Habilitar RLS na tabela profiles
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
 
--- Criar políticas RLS para profiles
-CREATE POLICY IF NOT EXISTS "Users can view own profile" 
+-- Criar políticas RLS para profiles (idempotente)
+DROP POLICY IF EXISTS "Users can view own profile" ON public.profiles;
+CREATE POLICY "Users can view own profile" 
 ON public.profiles 
 FOR SELECT 
 USING (auth.uid() = user_id);
-
-CREATE POLICY IF NOT EXISTS "Users can insert own profile" 
+ 
+DROP POLICY IF EXISTS "Users can insert own profile" ON public.profiles;
+CREATE POLICY "Users can insert own profile" 
 ON public.profiles 
 FOR INSERT 
 WITH CHECK (auth.uid() = user_id);
-
-CREATE POLICY IF NOT EXISTS "Users can update own profile" 
+ 
+DROP POLICY IF EXISTS "Users can update own profile" ON public.profiles;
+CREATE POLICY "Users can update own profile" 
 ON public.profiles 
 FOR UPDATE 
 USING (auth.uid() = user_id);
