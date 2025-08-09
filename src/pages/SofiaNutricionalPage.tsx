@@ -433,6 +433,20 @@ const SofiaNutricionalPage: React.FC = () => {
     URL.revokeObjectURL(url);
   };
 
+  // UI helpers para cards de refeição (nível clínico)
+  const getMealIcon = (key: keyof DailyMeals): string => {
+    if (key === 'breakfast') return '🍳';
+    if (key === 'snack') return '🥪';
+    if (key === 'dinner') return '🍽️';
+    return '🥗';
+  };
+  const estimatePrepTime = (meal: any): number => {
+    const names = (meal?.ingredients || []).map((i: any) => (i.name || '').toLowerCase()).join(' ');
+    if (/arroz|frango|peixe|forno|panela|cozinhar/.test(names)) return 25;
+    if (/iogurte|fruta|banana|maç|maca|granola|aveia/.test(names)) return 10;
+    return 15;
+  };
+
   const statusCard = (
     <Card className="h-full bg-card/60 backdrop-blur-xl border border-border/30 shadow-card">
       <CardHeader className="pb-2">
@@ -549,20 +563,34 @@ const SofiaNutricionalPage: React.FC = () => {
                     </div>
                   );
                   return (
-                    <Card key={mealKey} className="bg-muted/30">
+                    <Card key={mealKey} className="bg-card border border-border/50 shadow-card">
                       <CardHeader className="py-3">
-                        <CardTitle className="text-sm font-semibold">
+                        <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                          <span className="text-lg">{getMealIcon(mealKey)}</span>
                           {mealKey === 'breakfast' && 'Café da Manhã'}
                           {mealKey === 'lunch' && 'Almoço'}
                           {mealKey === 'snack' && 'Lanche'}
                           {mealKey === 'dinner' && 'Jantar'}
                         </CardTitle>
                       </CardHeader>
-                      <CardContent className="space-y-2">
+                      <CardContent className="space-y-3">
                         <div className="text-sm font-medium">{meal.name}</div>
                         {'calories_kcal' in meal && (
-                          <div className="text-xs text-emerald-600 font-medium">{(meal as any).calories_kcal} kcal</div>
+                          <div className="text-xs text-emerald-700 font-medium">{(meal as any).calories_kcal} kcal</div>
                         )}
+                        {/* Chips de macro e tempo */}
+                        {(() => {
+                          const n = computeMeal(meal);
+                          const prep = estimatePrepTime(meal);
+                          return (
+                            <div className="flex flex-wrap gap-2 text-[11px]">
+                              <span className="px-2 py-1 rounded-full bg-green-50 text-green-700 border border-green-200">Prot {Math.round(n.protein_g)} g</span>
+                              <span className="px-2 py-1 rounded-full bg-blue-50 text-blue-700 border border-blue-200">Carb {Math.round(n.carbs_g)} g</span>
+                              <span className="px-2 py-1 rounded-full bg-amber-50 text-amber-700 border border-amber-200">Gord {Math.round(n.fat_g)} g</span>
+                              <span className="px-2 py-1 rounded-full bg-slate-50 text-slate-700 border border-slate-200">{prep} min</span>
+                            </div>
+                          );
+                        })()}
                         {(meal as any).homemade_measure && (
                           <div className="text-xs text-muted-foreground">Medida caseira: {(meal as any).homemade_measure}</div>
                         )}
