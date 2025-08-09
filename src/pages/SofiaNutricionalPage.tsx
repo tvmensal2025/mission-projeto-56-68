@@ -19,6 +19,7 @@ import SofiaIntakeDialog, { IntakeAnswers } from '@/components/sofia/SofiaIntake
 import SofiaMealQnAChat, { MealQnAResult } from '@/components/sofia/SofiaMealQnAChat';
 import { exportMealPlanToPDF } from '@/utils/exportMealPlanPDF';
 import { openMealPlanHTML, downloadMealPlanHTML } from '@/utils/exportMealPlanHTML';
+import MealSwapModal from '@/components/sofia/MealSwapModal';
 
 type BudgetLevel = 'baixo' | 'médio' | 'alto';
 
@@ -69,6 +70,8 @@ const SofiaNutricionalPage: React.FC = () => {
   const [shoppingOpen, setShoppingOpen] = useState(false);
   const [intakeOpen, setIntakeOpen] = useState(false);
   const [lastIntake, setLastIntake] = useState<IntakeAnswers | null>(null);
+  const [swapOpen, setSwapOpen] = useState(false);
+  const [swapMealKey, setSwapMealKey] = useState<keyof DailyMeals | null>(null);
   const planRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
   const { trigger: confettiTrigger, celebrate } = useConfetti();
@@ -537,7 +540,8 @@ const SofiaNutricionalPage: React.FC = () => {
                             onClick={() => {
                               const swaps = (window as any).__sofia_swap_suggestions;
                               if (!swaps) { toast({ title: 'Sem opções agora', description: 'Gere um plano para ver sugestões.' }); return; }
-                              toast({ title: 'Substituições', description: 'Sugestões disponíveis por categoria: proteína, carboidrato e vegetal.' });
+                              setSwapMealKey(mealKey);
+                              setSwapOpen(true);
                             }}
                           >Trocar por similar</Button>
                         </div>
@@ -797,6 +801,20 @@ const SofiaNutricionalPage: React.FC = () => {
             />
           </DialogContent>
         </Dialog>
+        {/* Modal de Substituições Inteligentes */}
+        <MealSwapModal
+          open={swapOpen}
+          onOpenChange={setSwapOpen}
+          meal={swapMealKey ? (currentPlan?.days['hoje'] as any)?.[swapMealKey] : undefined}
+          swapSuggestions={(window as any).__sofia_swap_suggestions || null}
+          onApply={(updated) => {
+            if (!currentPlan || !swapMealKey) return;
+            const copy: MealPlan = JSON.parse(JSON.stringify(currentPlan));
+            (copy.days['hoje'] as any)[swapMealKey] = updated as any;
+            setCurrentPlan(copy);
+            toast({ title: 'Substituição aplicada', description: 'Mantivemos as calorias aproximadas.' });
+          }}
+        />
         {/* Modal Lista de Compras */}
         <Dialog open={shoppingOpen} onOpenChange={setShoppingOpen}>
           <DialogContent className="max-w-2xl">
