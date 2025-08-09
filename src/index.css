@@ -216,6 +216,13 @@
     transform: translateY(-4px);
     box-shadow: var(--shadow-elegant);
   }
+
+  /* Focus AA padrão clínico */
+  .focus-aa:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 2px hsl(var(--ring)) , 0 0 0 4px white;
+    border-radius: var(--radius);
+  }
 }
 
 @layer components {
