@@ -11,6 +11,7 @@ import { Label } from '@/components/ui/label';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 import { useToast } from '@/hooks/use-toast';
 import { Calendar, MessageSquare, Printer, RefreshCw, ShoppingCart, Star, TrendingUp, Utensils } from 'lucide-react';
+import { ConfettiAnimation, useConfetti } from '@/components/gamification/ConfettiAnimation';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import SofiaChat from '@/components/sofia/SofiaChat';
 import SofiaMealSuggestionModal, { MealPlanGenerated, MealEntry } from '@/components/sofia/SofiaMealSuggestionModal';
@@ -70,6 +71,7 @@ const SofiaNutricionalPage: React.FC = () => {
   const [lastIntake, setLastIntake] = useState<IntakeAnswers | null>(null);
   const planRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
+  const { trigger: confettiTrigger, celebrate } = useConfetti();
 
   // Histórico local para evitar dependência de tabelas durante a v2
   const HISTORY_STORAGE_KEY = 'sofia_meal_plan_history_v2';
@@ -261,6 +263,7 @@ const SofiaNutricionalPage: React.FC = () => {
       });
       setLastSofiaInteraction(new Date().toISOString());
       toast({ title: 'Plano gerado', description: data.guarantee ? 'Metas atendidas (Garantido).' : 'Plano estimado.' });
+      celebrate();
     } catch (e: any) {
       console.error('planner error', e);
       toast({ title: 'Erro ao gerar', description: 'Use o fluxo alternativo de sugestão.', variant: 'destructive' });
@@ -388,6 +391,11 @@ const SofiaNutricionalPage: React.FC = () => {
               <span className="text-sm text-muted-foreground">Criado em</span>
               <span className="text-sm">{new Date(currentPlan.createdAt).toLocaleString('pt-BR')}</span>
             </div>
+            {currentPlan.tags?.includes('Garantido') && (
+              <div className="flex items-center gap-2 text-emerald-600 text-sm font-medium">
+                <span className="inline-flex items-center px-2 py-0.5 rounded bg-emerald-50 border border-emerald-200">Garantido ✓ metas atendidas</span>
+              </div>
+            )}
             <div className="flex gap-2">
               <Button variant="outline" size="sm" onClick={handlePrint}><Printer className="h-4 w-4 mr-1" /> Imprimir</Button>
               <Button variant="outline" size="sm" onClick={handleDownloadPDF}><Printer className="h-4 w-4 mr-1" /> Exportar PDF</Button>
@@ -459,7 +467,7 @@ const SofiaNutricionalPage: React.FC = () => {
         <h3 className="text-lg font-semibold">Sugestões Atuais</h3>
         <div className="flex gap-2">
           <Button variant="outline" size="sm" onClick={handleOpenShoppingList}><ShoppingCart className="h-4 w-4 mr-1" /> Ver Lista de Compras</Button>
-          <Button variant="outline" size="sm" onClick={handleDownloadPDF}><Printer className="h-4 w-4 mr-1" /> Imprimir Cardápio</Button>
+           <Button variant="outline" size="sm" onClick={handleDownloadPDF}><Printer className="h-4 w-4 mr-1" /> Imprimir Cardápio</Button>
           <Button variant="default" size="sm" onClick={handleSavePlan} disabled={!currentPlan}>Salvar no Perfil</Button>
         </div>
       </div>
@@ -527,7 +535,12 @@ const SofiaNutricionalPage: React.FC = () => {
           ))
         ) : (
           <Card>
-            <CardContent className="py-6 text-sm text-muted-foreground">Nenhum cardápio atual. Clique em “Nova Sugestão” para gerar um plano personalizado.</CardContent>
+            <CardContent className="py-6 text-sm text-muted-foreground">
+              Nenhum cardápio atual. Clique em “Nova Sugestão” para gerar um plano personalizado.
+              <div className="pt-2">
+                <Button size="sm" onClick={() => setIntakeOpen(true)}><RefreshCw className="h-4 w-4 mr-1" /> Nova Sugestão</Button>
+              </div>
+            </CardContent>
           </Card>
         )}
       </div>
@@ -639,6 +652,7 @@ const SofiaNutricionalPage: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-background">
+      <ConfettiAnimation trigger={confettiTrigger} />
       <div className="mx-auto max-w-7xl p-4 sm:p-6 space-y-4">
         <div className="flex items-center justify-between">
           <div>
@@ -738,6 +752,7 @@ const SofiaNutricionalPage: React.FC = () => {
               <DialogTitle>Converse com a Sofia</DialogTitle>
             </DialogHeader>
             <SofiaMealQnAChat
+              targetCaloriesKcal={targetCalories}
               onComplete={(qna: MealQnAResult) => {
                 setLastIntake({
                   objetivo: 'Plano diário',
