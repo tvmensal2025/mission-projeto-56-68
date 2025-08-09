@@ -20,6 +20,7 @@ import SofiaMealQnAChat, { MealQnAResult } from '@/components/sofia/SofiaMealQnA
 import { exportMealPlanToPDF } from '@/utils/exportMealPlanPDF';
 import { openMealPlanHTML, downloadMealPlanHTML } from '@/utils/exportMealPlanHTML';
 import MealSwapModal from '@/components/sofia/MealSwapModal';
+import MetricCard from '@/components/ui/MetricCard';
 
 type BudgetLevel = 'baixo' | 'médio' | 'alto';
 
@@ -400,8 +401,8 @@ const SofiaNutricionalPage: React.FC = () => {
               <span className="text-sm">{new Date(currentPlan.createdAt).toLocaleString('pt-BR')}</span>
             </div>
             {currentPlan.tags?.includes('Garantido') && (
-              <div className="flex items-center gap-2 text-emerald-600 text-sm font-medium">
-                <span className="inline-flex items-center px-2 py-0.5 rounded bg-emerald-50 border border-emerald-200">Garantido ✓ metas atendidas</span>
+              <div className="flex items-center gap-2 text-emerald-400 text-sm font-medium">
+                <span className="inline-flex items-center px-2 py-0.5 rounded bg-emerald-500/10 border border-emerald-400/30">Garantido ✓ metas atendidas</span>
               </div>
             )}
             <div className="flex gap-2">
@@ -697,8 +698,13 @@ const SofiaNutricionalPage: React.FC = () => {
 
         {/* Painel Resumo */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-          {statusCard}
-          {scoreCard}
+          {/* Métricas Premium */}
+          <div className="grid grid-cols-2 gap-3 md:col-span-2">
+            <MetricCard label="Calorias" value={Number(targetCalories || 0)} target={targetCalories} unit="" color="#22D3EE" />
+            <MetricCard label="Proteínas" value={currentPlan ? Math.round((currentPlan.days['hoje']?.lunch?.ingredients?.find(i=>i.name)?.quantity || 0)) : 0} target={undefined} unit="g" color="#7C3AED" />
+            <MetricCard label="Carboidratos" value={0} target={undefined} unit="g" color="#A78BFA" />
+            <MetricCard label="Gorduras" value={0} target={undefined} unit="g" color="#22D3EE" />
+          </div>
           {lastChatCard}
         </div>
 
