@@ -36,6 +36,10 @@ function normalize(text: string): string {
 
 const preparedStatePriority = ['cozido', 'grelhado', 'assado', 'pronto', 'liquido', 'raw'];
 
+// Precision mode defaults: strict and no yield guessing unless explicitly disabled
+const strictMode = (Deno.env.get('NUTRITION_STRICT_MODE') || 'true').toLowerCase() === 'true';
+const disableYieldGuess = (Deno.env.get('NUTRITION_DISABLE_YIELD_GUESS') || 'true').toLowerCase() === 'true';
+
 function guessDefaultYield(fromState: string, toState: string, foodName: string): number | null {
   const n = (foodName || '').toLowerCase();
   if (fromState === toState) return null;
@@ -67,7 +71,12 @@ const SYNONYMS: Record<string, string> = {
   'ovo cozido': 'ovo de galinha cozido',
   'ovo frito': 'ovo de galinha frito',
   'ovos mexidos': 'ovos mexidos',
-  'omelete': 'omelete simples'
+  'omelete': 'omelete simples',
+  // Laticínios/queijos frequentes em lasanha
+  'queijo': 'queijo minas',
+  'queijo ralado': 'queijo parmesão ralado',
+  // Pratos compostos para expandir por receita (futuro):
+  // 'lasanha': 'lasanha de carne' // placeholder canônico
 };
 
 serve(async (req) => {
@@ -75,7 +84,9 @@ serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
+  // Aceitar qualquer chamada - sem verificação JWT para Edge Functions internas
   try {
+    console.log('🔧 nutrition-calc called, method:', req.method);
     const { items, locale, target_state } = await req.json();
     if (!items || !Array.isArray(items)) throw new Error('items é obrigatório (array)');
 
@@ -199,6 +210,21 @@ serve(async (req) => {
       if (!grams && input.ml && food.density_g_ml) {
         grams = Number(input.ml) * Number(food.density_g_ml);
       }
+      // Strict: if no grams resolvable, skip item deterministically (no guesses)
+      if ((!grams || grams <= 0) && strictMode) {
+        resolved.push({
+          input,
+          matched_food_id: food.id,
+          matched_canonical_name: food.canonical_name,
+          base_state: food.state,
+          used_density_g_ml: food.density_g_ml ?? null,
+          used_epf: null,
+          used_yield_factor: null,
+          effective_grams: 0,
+          nutrients: null,
+        });
+        continue;
+      }
 
       // 4) Apply edible portion factor
       const epf = food.edible_portion_factor ? Number(food.edible_portion_factor) : null;
@@ -218,7 +244,9 @@ serve(async (req) => {
           .eq('from_state', fromState)
           .eq('to_state', toState)
           .limit(1);
-        usedYield = yields?.[0]?.factor ? Number(yields[0].factor) : guessDefaultYield(fromState, toState, food.canonical_name);
+        usedYield = yields?.[0]?.factor
+          ? Number(yields[0].factor)
+          : (disableYieldGuess ? null : guessDefaultYield(fromState, toState, food.canonical_name));
         if (usedYield && usedYield > 0) grams = grams * usedYield;
       }
 

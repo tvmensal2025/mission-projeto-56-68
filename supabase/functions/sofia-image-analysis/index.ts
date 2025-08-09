@@ -16,6 +16,48 @@ const portionMode = (Deno.env.get('SOFIA_PORTION_MODE') || 'ai_strict').trim();
 const minPortionConfidence = Number(Deno.env.get('SOFIA_PORTION_CONFIDENCE_MIN') || '0.55');
 // Desativar GPT por padrão: vamos padronizar na família Gemini
 const sofiaUseGpt = (Deno.env.get('SOFIA_USE_GPT') || 'false').toLowerCase() === 'true';
+// Modo estrito: sem fallback de porções padrão. Só calcula quando houver gramas/ml confiáveis
+const strictMode = (Deno.env.get('SOFIA_STRICT_MODE') || 'false').toLowerCase() === 'true';
+// Proxy do Ollama (FastAPI) para normalização e validação
+const ollamaProxyUrl = (Deno.env.get('OLLAMA_PROXY_URL') || 'http://localhost:8000').replace(/\/$/, '');
+
+async function callOllamaNormalizer(rawItems: Array<{name: string; grams?: number; ml?: number; method?: string}>): Promise<Array<{name: string; grams?: number; ml?: number; method?: string}>> {
+  try {
+    const system = 'Você é um normalizador de alimentos brasileiro. Receba itens {name, grams?, ml?, method?}.\nRegras:\n- Canonize nomes: arroz, branco, cozido; feijao carioca cozido; frango, peito, grelhado; salada verde; batata frita (se houver óleo).\n- Deduplique, some gramas/ML iguais.\n- NUNCA invente calorias.\n- Se não souber gramas, deixe sem.\n- Resposta APENAS em JSON: {"items":[{name,grams?,ml?,method?}]}.\n';
+    const user = `Itens: ${JSON.stringify(rawItems)}`;
+    const resp = await fetch(`${ollamaProxyUrl}/api/chat`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ messages: [{ role: 'system', content: system }, { role: 'user', content: user }], options: { temperature: 0.1 } }),
+    });
+    if (!resp.ok || !resp.body) return rawItems;
+    const reader = resp.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = '';
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+    }
+    // Tenta extrair o último JSON da resposta NDJSON
+    const lines = buf.split('\n').filter(Boolean);
+    for (let i = lines.length - 1; i >= 0; i--) {
+      try {
+        const evt = JSON.parse(lines[i]);
+        const text: string | undefined = evt?.message?.content;
+        if (text) {
+          const match = text.match(/\{[\s\S]*\}$/);
+          if (match) {
+            const parsed = JSON.parse(match[0]);
+            const items = Array.isArray(parsed?.items) ? parsed.items : [];
+            if (items.length > 0) return items;
+          }
+        }
+      } catch (_) { /* segue */ }
+    }
+  } catch (_) { /* mantém raw */ }
+  return rawItems;
+}
 
 // 📸 Função auxiliar para converter imagem URL em base64 (retornando também o MIME)
 async function fetchImageAsBase64(url: string): Promise<{ base64: string; mime: string }> {
@@ -255,6 +297,94 @@ function isLiquidName(name: string): boolean {
     n.includes('vitamina') ||
     n.includes('chá') || n.includes('cha')
   );
+}
+
+// Função de cálculo nutricional direto (sem chamada externa)
+async function calculateNutritionDirect(items: Array<{name: string; grams?: number; ml?: number}>, supabase: any): Promise<{kcal: number; protein_g: number; carbs_g: number; fat_g: number; fiber_g: number; sodium_mg: number} | null> {
+  const SYNONYMS: Record<string, string> = {
+    'ovo': 'ovo de galinha cozido',
+    'arroz': 'arroz, branco, cozido',
+    'feijão': 'feijao preto cozido',
+    'feijao': 'feijao preto cozido',
+    'batata': 'batata cozida',
+    'frango': 'frango grelhado',
+    'carne': 'carne bovina cozida',
+    'salada': 'salada verde',
+    'farofa': 'farofa pronta'
+  };
+
+  const normalize = (text: string): string => {
+    if (!text) return '';
+    return text.toLowerCase().normalize('NFD').replace(/\p{Diacritic}+/gu, '').replace(/[^a-z0-9 ]/g, ' ').trim().replace(/\s+/g, ' ');
+  };
+
+  let totals = { kcal: 0, protein_g: 0, fat_g: 0, carbs_g: 0, fiber_g: 0, sodium_mg: 0 };
+
+  for (const item of items) {
+    if (!item.name || (!item.grams && !item.ml)) continue;
+
+    const rawName = item.name;
+    const synonym = SYNONYMS[rawName.toLowerCase().trim()];
+    const searchName = synonym || rawName;
+    const alias = normalize(searchName);
+
+    // Buscar na base de dados TACO
+    let food: any = null;
+    
+    // Buscar diretamente na tabela valores_nutricionais_completos
+    const { data: valoresNutricionais } = await supabase
+      .from('valores_nutricionais_completos')
+      .select('alimento_nome, kcal, proteina, gorduras, carboidratos, fibras, sodio')
+      .ilike('alimento_nome', `%${searchName}%`)
+      .limit(5);
+        
+    if (valoresNutricionais && valoresNutricionais.length > 0) {
+      const valor = valoresNutricionais[0];
+      food = {
+        canonical_name: valor.alimento_nome,
+        kcal: valor.kcal || 0,
+        protein_g: valor.proteina || 0,
+        fat_g: valor.gorduras || 0,
+        carbs_g: valor.carboidratos || 0,
+        fiber_g: valor.fibras || 0,
+        sodium_mg: valor.sodio || 0,
+      };
+    }
+
+    if (!food) continue;
+
+    // Calcular gramas efetivas
+    let grams = Number(item.grams || 0);
+    if (!grams && item.ml && food.density_g_ml) {
+      grams = Number(item.ml) * Number(food.density_g_ml);
+    }
+    if (!grams) continue;
+
+    // Aplicar fator de porção comestível se existir
+    if (food.edible_portion_factor && Number(food.edible_portion_factor) > 0) {
+      grams = grams * Number(food.edible_portion_factor);
+    }
+
+    // Calcular nutrientes (por 100g)
+    const factor = grams / 100.0;
+    const nutrients = {
+      kcal: Number(food.kcal || 0) * factor,
+      protein_g: Number(food.protein_g || 0) * factor,
+      fat_g: Number(food.fat_g || 0) * factor,
+      carbs_g: Number(food.carbs_g || 0) * factor,
+      fiber_g: Number(food.fiber_g || 0) * factor,
+      sodium_mg: Number(food.sodium_mg || 0) * factor,
+    };
+
+    totals.kcal += nutrients.kcal;
+    totals.protein_g += nutrients.protein_g;
+    totals.fat_g += nutrients.fat_g;
+    totals.carbs_g += nutrients.carbs_g;
+    totals.fiber_g += nutrients.fiber_g;
+    totals.sodium_mg += nutrients.sodium_mg;
+  }
+
+  return totals;
 }
 
 // 🔍 Função para detectar combos de refeições
@@ -596,8 +726,52 @@ REGRAS:
                   aiItemsFiltered.forEach((it) => { if (it.grams) it.grams = Math.round(it.grams * scale); });
                 }
 
-                // Persistir itens AI em variável para uso na chamada determinística
-                (globalThis as any).__AI_PORTION_ITEMS__ = aiItemsFiltered;
+                // Deduplicar/normalizar itens para evitar somas duplicadas (ex.: carne cozida + ensopada)
+                function canonicalizeForCalc(name: string, method?: string): string {
+                  const n = (name || '').toLowerCase();
+                  const m = (method || '').toLowerCase();
+                  if (n.includes('carne')) {
+                    if (n.includes('cozid') || n.includes('ensopad') || m.includes('cozid')) return 'carne bovina cozida';
+                    if (n.includes('grelh') || n.includes('assad') || m.includes('grelh')) return 'carne bovina grelhada';
+                    return 'carne bovina cozida';
+                  }
+                  if (n.includes('farofa')) return 'farofa pronta';
+                  if (n.includes('batata') && !n.includes('frita')) return 'batata cozida';
+                  if (n.includes('salada')) return 'salada verde';
+                  if (n.includes('tomate')) return 'tomate cru';
+                  return name;
+                }
+
+                const dedup = new Map<string, { name: string; grams?: number; ml?: number; method?: string; confidence?: number }>();
+                const hasOil = aiItemsFiltered.some(it => (it.name||'').toLowerCase().includes('óleo') || (it.name||'').toLowerCase().includes('oleo'));
+                for (const it of aiItemsFiltered) {
+                  let key = canonicalizeForCalc(it.name, it.method);
+                  // Heurística: se há "óleo" e o item é batata genérica, considere "batata frita"
+                  if (hasOil) {
+                    const lowerKey = key.toLowerCase();
+                    if (lowerKey.includes('batata') && !lowerKey.includes('frita') && !lowerKey.includes('cozid')) {
+                      key = 'batata frita';
+                    }
+                  }
+                  const prev = dedup.get(key);
+                  if (prev) {
+                    prev.grams = (prev.grams || 0) + (it.grams || 0);
+                    prev.ml = (prev.ml || 0) + (it.ml || 0);
+                  } else {
+                    dedup.set(key, { ...it, name: key });
+                  }
+                }
+                // Se batata frita está presente, não contar "óleo" separadamente (evita dupla contagem)
+                if (dedup.has('batata frita')) {
+                  for (const k of Array.from(dedup.keys())) {
+                    const lk = k.toLowerCase();
+                    if (lk.includes('óleo') || lk.includes('oleo')) dedup.delete(k);
+                  }
+                }
+                const aiItemsDeduped = Array.from(dedup.values());
+
+                // Persistir itens AI deduplicados em variável para uso na chamada determinística
+                (globalThis as any).__AI_PORTION_ITEMS__ = aiItemsDeduped;
                 console.log('🎯 Análise combinada final (Gemini):', { totalItems: detectedFoods.length, estimatedCalories, confidence });
               }
             } catch (e) {
@@ -675,43 +849,46 @@ Ou você pode me contar o que está comendo! 😉✨`,
     const aiPortionItems = (globalThis as any).__AI_PORTION_ITEMS__ as Array<{name: string; grams?: number; ml?: number; method?: string}> | undefined;
     if (aiPortionItems && aiPortionItems.length > 0) {
       // Preferir itens estimados pela IA
-      calcItems = aiPortionItems.map((it) => ({
+      let itemsForCalc = aiPortionItems.map((it) => ({
         name: it.name,
         grams: isLiquidName(it.name) ? undefined : it.grams,
         ml: isLiquidName(it.name) ? it.ml : undefined,
         state: it.method
       }));
+      // Normalizar via Ollama (dedupe/canonizar) – não altera gramas, apenas nomes e soma duplicatas
+      itemsForCalc = await callOllamaNormalizer(itemsForCalc);
+      calcItems = itemsForCalc;
     } else {
-      // Fallback: porções padrão
-      calcItems = (Array.isArray(detectedFoods) && detectedFoods.length > 0 && typeof detectedFoods[0] === 'object'
-        ? detectedFoods as Array<{nome: string, quantidade: number}>
-        : (detectedFoods as string[]).map((n) => ({ nome: n, quantidade: PORCOES_BRASILEIRAS[n.toLowerCase()] || (isLiquidName(n) ? 200 : 100) }))
-      )
-        .map((f) => ({
-          name: f.nome,
-          grams: isLiquidName(f.nome) ? undefined : f.quantidade,
-          ml: isLiquidName(f.nome) ? f.quantidade : undefined,
-        }));
+      // Sem AI items
+      if (strictMode) {
+        calcItems = [];
+      } else {
+        // Fallback: porções padrão (apenas quando strictMode=false)
+        let itemsForCalc = (Array.isArray(detectedFoods) && detectedFoods.length > 0 && typeof detectedFoods[0] === 'object'
+          ? detectedFoods as Array<{nome: string, quantidade: number}>
+          : (detectedFoods as string[]).map((n) => ({ nome: n, quantidade: PORCOES_BRASILEIRAS[n.toLowerCase()] || (isLiquidName(n) ? 200 : 100) }))
+        )
+          .map((f) => ({
+            name: f.nome,
+            grams: isLiquidName(f.nome) ? undefined : f.quantidade,
+            ml: isLiquidName(f.nome) ? f.quantidade : undefined,
+          }));
+        itemsForCalc = await callOllamaNormalizer(itemsForCalc);
+        calcItems = itemsForCalc;
+      }
     }
 
+    // Cálculo determinístico via nutrition-calc (fonte única em modo estrito)
     let calcTotals: any = null;
     let calcResolved: any[] | null = null;
     try {
-      const calcRes = await fetch(`${supabaseUrl}/functions/v1/nutrition-calc`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${supabaseServiceKey}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ items: calcItems, locale: 'pt-BR' })
-      });
-      if (calcRes.ok) {
-        const calcJson = await calcRes.json();
-        calcTotals = calcJson?.totals || null;
-        calcResolved = Array.isArray(calcJson?.resolved) ? calcJson.resolved : null;
+      const { data, error } = await supabase.functions.invoke('nutrition-calc', { body: { items: calcItems, locale: 'pt-BR' } });
+      if (!error && data) {
+        calcTotals = data.totals || null;
+        calcResolved = data.resolved || null;
       }
     } catch (e) {
-      console.log('⚠️ Erro ao chamar nutrition-calc:', e);
+      console.log('⚠️ Erro ao invocar nutrition-calc:', e);
     }
 
     let macrosBlock = '';
@@ -734,6 +911,35 @@ Ou você pode me contar o que está comendo! 😉✨`,
       const perGramText = perGram ? `\n- Por grama: ${perGram.kcal_pg.toFixed(2)} kcal/g, P ${perGram.protein_pg.toFixed(3)} g/g, C ${perGram.carbs_pg.toFixed(3)} g/g, G ${perGram.fat_pg.toFixed(3)} g/g` : '';
 
       macrosBlock = `📊 Nutrientes (determinístico):\n- Calorias: ${Math.round(calcTotals.kcal)} kcal\n- Proteínas: ${calcTotals.protein_g.toFixed(1)} g\n- Carboidratos: ${calcTotals.carbs_g.toFixed(1)} g\n- Gorduras: ${calcTotals.fat_g.toFixed(1)} g\n- Fibras: ${calcTotals.fiber_g.toFixed(1)} g\n- Sódio: ${calcTotals.sodium_mg.toFixed(0)} mg${perGramText}\n\n`;
+    } else if (strictMode) {
+      // Mensagem amigável pedindo gramas quando não há dados suficientes
+      const neededList = (Array.isArray(detectedFoods) && detectedFoods.length > 0 && typeof detectedFoods[0] === 'object')
+        ? (detectedFoods as Array<{nome: string, quantidade: number}>).map(f => f.nome)
+        : (detectedFoods as string[]);
+      const chips = ['30g','50g','80g','100g','150g'];
+      const ask = `Não consegui estimar as quantidades com segurança. Pode confirmar as gramas de cada item? Ex.: ${chips.join(', ')}.`;
+      const finalStrict = `Oi ${actualUserName}! 😊\n\n📸 Itens detectados:\n${neededList.map(n=>`• ${n}`).join('\n')}\n\n${ask}`;
+
+      return new Response(JSON.stringify({
+        success: true,
+        requires_confirmation: true,
+        analysis_id: savedAnalysis?.id,
+        sofia_analysis: {
+          analysis: finalStrict,
+          personality: 'amigavel',
+          foods_detected: detectedFoods,
+          confirmation_required: true
+        },
+        food_detection: {
+          foods_detected: detectedFoods,
+          is_food: true,
+          confidence: confidence,
+          estimated_calories: 0,
+          nutrition_totals: null,
+          meal_type: userContext?.currentMeal || 'refeicao'
+        },
+        alimentos_identificados: neededList
+      }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
     const finalMessage = `Oi ${actualUserName}! 😊 
