@@ -77,6 +77,56 @@ const SofiaNutricionalPage: React.FC = () => {
   const { toast } = useToast();
   const { trigger: confettiTrigger, celebrate } = useConfetti();
 
+  // Estimador leve de macros para exibição/metric cards (mesma base do HTML/PDF)
+  type Nutrients = { kcal: number; protein_g: number; fat_g: number; carbs_g: number; fiber_g: number; sodium_mg: number };
+  const perGram = (name: string): Nutrients => {
+    const n = (name || '').toLowerCase();
+    if (n.includes('arroz')) return { kcal: 1.3, protein_g: 0.027, fat_g: 0.003, carbs_g: 0.28, fiber_g: 0.004, sodium_mg: 0.01 };
+    if (n.includes('frango')) return { kcal: 1.1, protein_g: 0.206, fat_g: 0.036, carbs_g: 0, fiber_g: 0, sodium_mg: 0.74 };
+    if (n.includes('peixe')) return { kcal: 1.0, protein_g: 0.22, fat_g: 0.02, carbs_g: 0, fiber_g: 0, sodium_mg: 0.6 };
+    if (n.includes('atum')) return { kcal: 1.32, protein_g: 0.29, fat_g: 0.01, carbs_g: 0, fiber_g: 0, sodium_mg: 0.37 };
+    if (n.includes('ovo')) return { kcal: 1.56, protein_g: 0.126, fat_g: 0.106, carbs_g: 0.012, fiber_g: 0, sodium_mg: 1.24 };
+    if (n.includes('aveia')) return { kcal: 3.89, protein_g: 0.17, fat_g: 0.07, carbs_g: 0.66, fiber_g: 0.11, sodium_mg: 0.02 };
+    if (n.includes('pão') || n.includes('pao')) return { kcal: 2.6, protein_g: 0.08, fat_g: 0.03, carbs_g: 0.49, fiber_g: 0.025, sodium_mg: 5 };
+    if (n.includes('banana')) return { kcal: 0.89, protein_g: 0.011, fat_g: 0.003, carbs_g: 0.23, fiber_g: 0.026, sodium_mg: 0.001 };
+    if (n.includes('maç') || n.includes('maca')) return { kcal: 0.52, protein_g: 0.003, fat_g: 0.002, carbs_g: 0.14, fiber_g: 0.024, sodium_mg: 0.001 };
+    if (n.includes('iogurte')) return { kcal: 0.63, protein_g: 0.035, fat_g: 0.033, carbs_g: 0.049, fiber_g: 0, sodium_mg: 0.5 };
+    if (n.includes('leite')) return { kcal: 0.64, protein_g: 0.033, fat_g: 0.036, carbs_g: 0.05, fiber_g: 0, sodium_mg: 0.44 };
+    if (n.includes('queijo')) return { kcal: 4, protein_g: 0.25, fat_g: 0.33, carbs_g: 0.013, fiber_g: 0, sodium_mg: 6 };
+    if (n.includes('batata doce')) return { kcal: 0.86, protein_g: 0.016, fat_g: 0.001, carbs_g: 0.20, fiber_g: 0.03, sodium_mg: 0.055 };
+    if (n.includes('batata')) return { kcal: 0.77, protein_g: 0.02, fat_g: 0.001, carbs_g: 0.17, fiber_g: 0.026, sodium_mg: 0.005 };
+    if (n.includes('salada') || n.includes('legume')) return { kcal: 0.25, protein_g: 0.012, fat_g: 0.003, carbs_g: 0.04, fiber_g: 0.02, sodium_mg: 0.01 };
+    if (n.includes('azeite')) return { kcal: 8.84, protein_g: 0, fat_g: 1.0, carbs_g: 0, fiber_g: 0, sodium_mg: 0 };
+    if (n.includes('molho')) return { kcal: 0.29, protein_g: 0.015, fat_g: 0.002, carbs_g: 0.05, fiber_g: 0.015, sodium_mg: 4 };
+    return { kcal: 1.0, protein_g: 0, fat_g: 0, carbs_g: 0, fiber_g: 0, sodium_mg: 0 };
+  };
+  const computeMeal = (m: any): Nutrients => {
+    if (!m) return { kcal: 0, protein_g: 0, fat_g: 0, carbs_g: 0, fiber_g: 0, sodium_mg: 0 };
+    const base = (m.ingredients || []).reduce((acc: Nutrients, ing: any) => {
+      const g = Number(ing.quantity || 0);
+      const p = perGram(ing.name);
+      acc.kcal += p.kcal * g;
+      acc.protein_g += p.protein_g * g;
+      acc.fat_g += p.fat_g * g;
+      acc.carbs_g += p.carbs_g * g;
+      acc.fiber_g += p.fiber_g * g;
+      acc.sodium_mg += p.sodium_mg * g;
+      return acc;
+    }, { kcal: 0, protein_g: 0, fat_g: 0, carbs_g: 0, fiber_g: 0, sodium_mg: 0 });
+    if (m.calories_kcal && base.kcal === 0) base.kcal = m.calories_kcal;
+    return base;
+  };
+  const computeDailyTotals = (plan: MealPlan | null): Nutrients => {
+    if (!plan) return { kcal: 0, protein_g: 0, fat_g: 0, carbs_g: 0, fiber_g: 0, sodium_mg: 0 };
+    const day = plan.days['hoje'] || plan.days[Object.keys(plan.days)[0]];
+    const meals = [day?.breakfast, day?.lunch, day?.snack, day?.dinner];
+    return meals.reduce((acc: Nutrients, m: any) => {
+      const n = computeMeal(m);
+      acc.kcal += n.kcal; acc.protein_g += n.protein_g; acc.fat_g += n.fat_g; acc.carbs_g += n.carbs_g; acc.fiber_g += n.fiber_g; acc.sodium_mg += n.sodium_mg;
+      return acc;
+    }, { kcal: 0, protein_g: 0, fat_g: 0, carbs_g: 0, fiber_g: 0, sodium_mg: 0 });
+  };
+
   // Histórico local para evitar dependência de tabelas durante a v2
   const HISTORY_STORAGE_KEY = 'sofia_meal_plan_history_v2';
   const generateId = () => (typeof crypto !== 'undefined' && 'randomUUID' in crypto ? (crypto as any).randomUUID() : `${Date.now()}_${Math.random().toString(36).slice(2,10)}`);
@@ -700,10 +750,17 @@ const SofiaNutricionalPage: React.FC = () => {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
           {/* Métricas Premium */}
           <div className="grid grid-cols-2 gap-3 md:col-span-2">
-            <MetricCard label="Calorias" value={Number(targetCalories || 0)} target={targetCalories} unit="" color="#22D3EE" />
-            <MetricCard label="Proteínas" value={currentPlan ? Math.round((currentPlan.days['hoje']?.lunch?.ingredients?.find(i=>i.name)?.quantity || 0)) : 0} target={undefined} unit="g" color="#7C3AED" />
-            <MetricCard label="Carboidratos" value={0} target={undefined} unit="g" color="#A78BFA" />
-            <MetricCard label="Gorduras" value={0} target={undefined} unit="g" color="#22D3EE" />
+            {(() => {
+              const totals = computeDailyTotals(currentPlan);
+              return (
+                <>
+                  <MetricCard label="Calorias" value={Math.round(totals.kcal)} target={targetCalories} unit="" color="#22D3EE" />
+                  <MetricCard label="Proteínas" value={Math.round(totals.protein_g)} unit="g" color="#7C3AED" />
+                  <MetricCard label="Carboidratos" value={Math.round(totals.carbs_g)} unit="g" color="#A78BFA" />
+                  <MetricCard label="Gorduras" value={Math.round(totals.fat_g)} unit="g" color="#22D3EE" />
+                </>
+              );
+            })()}
           </div>
           {lastChatCard}
         </div>
