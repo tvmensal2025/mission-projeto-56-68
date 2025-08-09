@@ -724,16 +724,16 @@ const SofiaNutricionalPage: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-dark">
+    <div className="min-h-screen bg-background">
       <ConfettiAnimation trigger={confettiTrigger} />
       <div className="mx-auto max-w-7xl p-4 sm:p-6 space-y-4">
         {/* Hero Tech Premium */}
-        <div className="relative overflow-hidden rounded-2xl border border-border/30 bg-card/60 backdrop-blur-xl shadow-glow">
-          <div className="absolute inset-0 pointer-events-none" style={{ background: 'radial-gradient(600px 200px at 20% -20%, rgba(124,58,237,0.25), transparent), radial-gradient(500px 200px at 80% 0%, rgba(34,211,238,0.18), transparent)' }} />
+        <div className="relative overflow-hidden rounded-2xl border border-border/50 bg-card shadow-card">
+          <div className="absolute inset-0 pointer-events-none" style={{ background: 'radial-gradient(600px 200px at 20% -20%, rgba(34,197,94,0.12), transparent), radial-gradient(500px 200px at 80% 0%, rgba(14,165,233,0.10), transparent)' }} />
           <div className="relative p-5 sm:p-6 flex items-center justify-between">
             <div>
               <h1 className="text-2xl sm:text-3xl font-semibold flex items-center gap-2 text-foreground">
-                <Utensils className="h-6 w-6 text-accent" /> Sofia Nutricional
+                <Utensils className="h-6 w-6 text-green-600" /> Sofia Nutricional
               </h1>
               <p className="text-sm text-muted-foreground">Planejamento inteligente com garantia de metas</p>
             </div>
@@ -741,7 +741,7 @@ const SofiaNutricionalPage: React.FC = () => {
               {currentPlan?.tags?.includes('Garantido') && (
                 <span className="px-3 py-1 rounded-full bg-emerald-500/15 text-emerald-300 border border-emerald-400/30 text-xs">Garantido ✓</span>
               )}
-              <Button onClick={() => setIntakeOpen(true)} className="bg-gradient-primary border border-primary/30 shadow-glow">Gerar agora</Button>
+              <Button onClick={() => setIntakeOpen(true)} className="bg-gradient-primary border border-primary/30 shadow-elegant">Gerar agora</Button>
             </div>
           </div>
         </div>
