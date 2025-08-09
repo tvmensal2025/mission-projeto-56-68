@@ -226,12 +226,34 @@ serve(async (req) => {
       }
     }
 
+    // Substituições simples por categoria para o frontend (protótipo)
+    const swap_suggestions = {
+      proteina: [
+        { name: 'frango', grams: 150 },
+        { name: 'peixe', grams: 150 },
+        { name: 'atum', grams: 120 },
+        { name: 'ovos', grams: 100 }
+      ],
+      carboidrato: [
+        { name: 'arroz', grams: 120 },
+        { name: 'batata', grams: 150 },
+        { name: 'batata doce', grams: 150 },
+        { name: 'pão', grams: 50 },
+        { name: 'aveia', grams: 40 }
+      ],
+      vegetal: [
+        { name: 'salada', grams: 120 },
+        { name: 'legumes', grams: 150 }
+      ]
+    } as const;
+
     return new Response(JSON.stringify({
       success: true,
       target_kcal: targetKcal,
       totals: dayTotals,
       guarantee,
       by_slot: slotResults,
+      swap_suggestions,
       plan_id: savedPlanId
     }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
   } catch (error) {

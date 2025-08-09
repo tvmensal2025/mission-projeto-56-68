@@ -1,5 +1,117 @@
 export interface MealIngredient { name: string; quantity: number; unit: string }
 export interface MealEntry { name: string; calories_kcal?: number; ingredients?: MealIngredient[]; notes?: string; homemade_measure?: string }
+export interface MealPlanForHTML {
+  userName?: string;
+  dateLabel: string;
+  targetCaloriesKcal?: number;
+  meals: {
+    breakfast?: MealEntry;
+    lunch?: MealEntry;
+    afternoon_snack?: MealEntry;
+    dinner?: MealEntry;
+    supper?: MealEntry;
+  }
+}
+
+function escapeHtml(str?: string) {
+  if (!str) return '';
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
+export function generateMealPlanHTML(plan: MealPlanForHTML): string {
+  const section = (title: string, entry?: MealEntry) => {
+    if (!entry) return `<div class="card muted">${title}: não definido</div>`;
+    const ings = (entry.ingredients || [])
+      .map(i => `<li>${escapeHtml(i.name)} • ${Math.round(i.quantity)} ${escapeHtml(i.unit)}</li>`)
+      .join('');
+    return `
+      <div class="card">
+        <div class="card-title">${escapeHtml(title)}</div>
+        <div class="item-name">${escapeHtml(entry.name)}</div>
+        ${entry.calories_kcal ? `<div class="kcal">${Math.round(entry.calories_kcal)} kcal</div>` : ''}
+        ${entry.homemade_measure ? `<div class="detail">Medida caseira: ${escapeHtml(entry.homemade_measure)}</div>` : ''}
+        ${entry.notes ? `<div class="detail">Obs.: ${escapeHtml(entry.notes)}</div>` : ''}
+        ${(entry.ingredients && entry.ingredients.length) ? `<ul class="ingredients">${ings}</ul>` : ''}
+      </div>
+    `;
+  };
+
+  return `<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Cardápio Sofia</title>
+  <style>
+    :root{--bg:#0b0f1a;--panel:#121a2a;--muted:#2a3350;--text:#e6ecff;--accent:#7c3aed;--ok:#10b981}
+    html,body{margin:0;padding:0;background:linear-gradient(180deg,#0b0f1a,#111827);color:var(--text);font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto}
+    .wrap{max-width:900px;margin:40px auto;padding:20px}
+    .header{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px}
+    .h-title{font-weight:700;font-size:22px;letter-spacing:.3px}
+    .badge{display:inline-flex;align-items:center;gap:6px;border:1px solid #1f2a44;background:#0f172a;color:#a7b4e0;border-radius:999px;padding:4px 10px;font-size:12px}
+    .badge.ok{border-color:#064e3b;color:#d1fae5;background:#052e24}
+    .grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+    .card{background:linear-gradient(180deg,#0e1626,#0d1321);border:1px solid #202b45;border-radius:14px;padding:14px}
+    .card.muted{opacity:.65}
+    .card-title{font-weight:600;color:#9fb0e6;margin-bottom:6px}
+    .item-name{font-size:15px;font-weight:600}
+    .kcal{margin-top:4px;color:#9ae6b4;font-weight:600}
+    .detail{margin-top:2px;color:#a7b4e0;font-size:13px}
+    .ingredients{margin:8px 0 0 16px;color:#cdd6f4;font-size:13px}
+    .footer{margin-top:14px;display:flex;gap:8px;align-items:center;color:#a7b4e0}
+  </style>
+  <script>function printNow(){window.print()}</script>
+  </head>
+<body>
+  <div class="wrap">
+    <div class="header">
+      <div class="h-title">Cardápio Sofia ${plan.userName ? '• '+escapeHtml(plan.userName) : ''}</div>
+      <div>
+        ${plan.targetCaloriesKcal ? `<span class="badge">Meta ${plan.targetCaloriesKcal} kcal</span>` : ''}
+        <span class="badge">${escapeHtml(plan.dateLabel)}</span>
+        <span class="badge ok" onclick="printNow()">Imprimir</span>
+      </div>
+    </div>
+    <div class="grid">
+      ${section('Café da Manhã', plan.meals.breakfast)}
+      ${section('Almoço', plan.meals.lunch)}
+      ${section('Café da Tarde', plan.meals.afternoon_snack)}
+      ${section('Jantar', plan.meals.dinner)}
+      ${section('Ceia', plan.meals.supper)}
+    </div>
+    <div class="footer">Gerado pela Sofia Nutricional • Instituto dos Sonhos</div>
+  </div>
+</body>
+</html>`;
+}
+
+export function openMealPlanHTML(plan: MealPlanForHTML): void {
+  const html = generateMealPlanHTML(plan);
+  const blob = new Blob([html], { type: 'text/html' });
+  const url = URL.createObjectURL(blob);
+  window.open(url, '_blank');
+}
+
+export function downloadMealPlanHTML(plan: MealPlanForHTML): void {
+  const html = generateMealPlanHTML(plan);
+  const blob = new Blob([html], { type: 'text/html' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `cardapio-sofia-${new Date().toISOString().split('T')[0]}.html`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+export interface MealIngredient { name: string; quantity: number; unit: string }
+export interface MealEntry { name: string; calories_kcal?: number; ingredients?: MealIngredient[]; notes?: string; homemade_measure?: string }
 
 export interface MealPlanForHTML {
   userName?: string;

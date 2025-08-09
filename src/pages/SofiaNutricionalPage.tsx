@@ -263,6 +263,8 @@ const SofiaNutricionalPage: React.FC = () => {
       });
       setLastSofiaInteraction(new Date().toISOString());
       toast({ title: 'Plano gerado', description: data.guarantee ? 'Metas atendidas (Garantido).' : 'Plano estimado.' });
+      // Armazena sugestões de troca quando existirem
+      (window as any).__sofia_swap_suggestions = data.swap_suggestions || null;
       celebrate();
     } catch (e: any) {
       console.error('planner error', e);
@@ -523,8 +525,21 @@ const SofiaNutricionalPage: React.FC = () => {
                             </div>
                           </div>
                         ) : null}
-                        <div className="pt-2">
-                          <Button variant="secondary" size="sm" onClick={() => toast({ title: 'Ajuste de refeição', description: 'Fluxo de ajuste será habilitado após confirmação.' })}>Ajustar Refeição</Button>
+                        <div className="pt-2 flex gap-2">
+                          <Button
+                            variant="secondary"
+                            size="sm"
+                            onClick={() => toast({ title: 'Ajuste de refeição', description: 'Fluxo de ajuste será habilitado após confirmação.' })}
+                          >Ajustar Refeição</Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              const swaps = (window as any).__sofia_swap_suggestions;
+                              if (!swaps) { toast({ title: 'Sem opções agora', description: 'Gere um plano para ver sugestões.' }); return; }
+                              toast({ title: 'Substituições', description: 'Sugestões disponíveis por categoria: proteína, carboidrato e vegetal.' });
+                            }}
+                          >Trocar por similar</Button>
                         </div>
                       </CardContent>
                     </Card>
