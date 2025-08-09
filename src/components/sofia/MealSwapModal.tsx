@@ -17,6 +17,8 @@ export interface MealSwapModalProps {
   meal: MealEntry | undefined;
   swapSuggestions: Record<SwapCategory, SwapSuggestion[]> | null;
   onApply: (updated: MealEntry) => void;
+  targetCaloriesKcal?: number;
+  currentDayTotals?: { kcal: number; protein_g: number; fat_g: number; carbs_g: number; };
 }
 
 const kcalPerGram = (name: string): number => {
@@ -44,7 +46,7 @@ const classify = (name: string): SwapCategory | 'outros' => {
   return 'outros';
 };
 
-export const MealSwapModal: React.FC<MealSwapModalProps> = ({ open, onOpenChange, meal, swapSuggestions, onApply }) => {
+export const MealSwapModal: React.FC<MealSwapModalProps> = ({ open, onOpenChange, meal, swapSuggestions, onApply, targetCaloriesKcal, currentDayTotals }) => {
   const initialCategory: SwapCategory = useMemo(() => {
     const ing = meal?.ingredients?.[0]?.name || meal?.name || '';
     const c = classify(ing);
@@ -117,10 +119,18 @@ export const MealSwapModal: React.FC<MealSwapModalProps> = ({ open, onOpenChange
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                   {list.map((s, idx) => {
                     const gramsNeeded = Math.max(30, Math.min(400, Math.round(((currentKcal || 300) / kcalPerGram(s.name)) / 5) * 5));
+                    // Preview de impacto
+                    const newKcal = gramsNeeded * kcalPerGram(s.name);
+                    const deltaKcal = Math.round(newKcal - currentKcal);
                     return (
                       <div key={idx} className="border rounded p-2 bg-background/60">
                         <div className="text-sm font-medium capitalize">{s.name}</div>
-                        <div className="text-xs text-muted-foreground">Sugerido: {gramsNeeded}g</div>
+                        <div className="text-xs text-muted-foreground">Sugerido: {gramsNeeded}g • Δ {deltaKcal >= 0 ? '+' : ''}{deltaKcal} kcal</div>
+                        {targetCaloriesKcal && currentDayTotals ? (
+                          <div className="text-[11px] text-muted-foreground mt-1">
+                            Meta diária: {targetCaloriesKcal} • Atual: {Math.round(currentDayTotals.kcal)} • Prev.: {Math.round(currentDayTotals.kcal + deltaKcal)}
+                          </div>
+                        ) : null}
                         <div className="pt-1">
                           <Button size="sm" className="w-full" onClick={() => applySwap(s)}>Usar</Button>
                         </div>

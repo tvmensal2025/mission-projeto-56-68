@@ -913,6 +913,8 @@ const SofiaNutricionalPage: React.FC = () => {
           onOpenChange={setSwapOpen}
           meal={swapMealKey ? (currentPlan?.days['hoje'] as any)?.[swapMealKey] : undefined}
           swapSuggestions={(window as any).__sofia_swap_suggestions || null}
+          targetCaloriesKcal={targetCalories}
+          currentDayTotals={(() => computeDailyTotals(currentPlan))()}
           onApply={(updated) => {
             if (!currentPlan || !swapMealKey) return;
             const copy: MealPlan = JSON.parse(JSON.stringify(currentPlan));
