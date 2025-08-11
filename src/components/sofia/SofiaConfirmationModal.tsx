@@ -316,8 +316,16 @@ const SofiaConfirmationModal: React.FC<SofiaConfirmationModalProps> = ({
 
       console.log('🔄 Enviando confirmação:', requestBody);
 
-      const { data, error } = await supabase.functions.invoke('sofia-food-confirmation', {
-        body: requestBody
+      const { data, error } = await supabase.functions.invoke('sofia-deterministic', {
+        body: {
+          detected_foods: foodItems.map(item => ({
+            name: item.name,
+            grams: item.unit === 'g' ? item.quantity : undefined,
+            ml: item.unit === 'ml' ? item.quantity : undefined
+          })),
+          user_id: userId,
+          analysis_type: 'nutritional_sum'
+        }
       });
 
       if (error) {
@@ -329,43 +337,12 @@ const SofiaConfirmationModal: React.FC<SofiaConfirmationModalProps> = ({
       console.log('✅ Confirmação processada:', data);
 
       if (data.success) {
-        // Preferir exibir os totais determinísticos retornados pela confirmação
-        const totals = data?.totals as { kcal: number; protein_g: number; carbs_g: number; fat_g: number; fiber_g?: number; sodium_mg?: number } | null;
-        let message: string = data?.sofia_response || '';
+        // Use the standardized Sofia response from deterministic calculation
+        const nutrition = data.nutrition_data;
+        const message = data.sofia_response || generateStandardResponse(nutrition);
+        const calories = nutrition?.total_kcal || 0;
 
-        if (totals) {
-          const solidTotalGrams = foodItems
-            .filter((i) => i && i.unit === 'g')
-            .reduce((acc, i) => acc + (Number(i.quantity) || 0), 0);
-
-          const perGram = solidTotalGrams > 0 ? {
-            kcal: totals.kcal / solidTotalGrams,
-            p: totals.protein_g / solidTotalGrams,
-            c: totals.carbs_g / solidTotalGrams,
-            f: totals.fat_g / solidTotalGrams,
-          } : null;
-
-          const per100 = solidTotalGrams > 0 ? {
-            kcal: (totals.kcal / solidTotalGrams) * 100,
-            p: (totals.protein_g / solidTotalGrams) * 100,
-            c: (totals.carbs_g / solidTotalGrams) * 100,
-            f: (totals.fat_g / solidTotalGrams) * 100,
-          } : null;
-
-          const foodsList = foodItems.map(i => i.name).join(', ');
-          // Subtotais por item (aproximando com proporção pelo peso sólido)
-          const perItemLines = foodItems
-            .filter(i => i.unit === 'g' && Number(i.quantity) > 0)
-            .map(i => `• ${i.name} – ${i.quantity}g`)
-            .join('\n');
-          const block = `🍽️ Prato identificado: ${foodsList}\n\n📊 Nutrientes (determinístico)\n- Calorias: ${Math.round(totals.kcal)} kcal\n- Proteínas: ${totals.protein_g.toFixed(1)} g\n- Carboidratos: ${totals.carbs_g.toFixed(1)} g\n- Gorduras: ${totals.fat_g.toFixed(1)} g` +
-            (perGram ? `\n- Por grama: ${perGram.kcal.toFixed(2)} kcal/g, P ${perGram.p.toFixed(3)} g/g, C ${perGram.c.toFixed(3)} g/g, G ${perGram.f.toFixed(3)} g/g` : '') +
-            (per100 ? `\n- Por 100 g: ${per100.kcal.toFixed(0)} kcal, P ${per100.p.toFixed(1)} g, C ${per100.c.toFixed(1)} g, G ${per100.f.toFixed(1)} g` : '');
-
-          message = block + (perItemLines ? `\n\nItens e gramas:\n${perItemLines}` : '');
-        }
-
-        onConfirmation(message, data.estimated_calories);
+        onConfirmation(message, calories);
         toast.success('✅ Análise confirmada pela Sofia!');
         onClose();
       } else {
@@ -558,5 +535,17 @@ const SofiaConfirmationModal: React.FC<SofiaConfirmationModalProps> = ({
     </Dialog>
   );
 };
+
+// Standard response generator for consistency
+function generateStandardResponse(nutrition: any): string {
+  if (!nutrition) return 'Análise nutricional concluída.';
+  
+  return `💪 Proteínas: ${(nutrition.total_proteina || 0).toFixed(1)} g
+🍞 Carboidratos: ${(nutrition.total_carbo || 0).toFixed(1)} g
+🥑 Gorduras: ${(nutrition.total_gordura || 0).toFixed(1)} g
+🔥 Estimativa calórica: ${Math.round(nutrition.total_kcal || 0)} kcal
+
+✅ Obrigado! Seus dados estão salvos.`;
+}
 
 export default SofiaConfirmationModal;

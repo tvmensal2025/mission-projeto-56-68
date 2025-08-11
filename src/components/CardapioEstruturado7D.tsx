@@ -5,7 +5,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Export, Printer, Image as ImageIcon, Info } from 'lucide-react';
+import { Download, Printer, Image as ImageIcon, Info } from 'lucide-react';
 import { detectFoodIntent, sumBlockKcal, avoidRepetition, estimateSuggestionLine, MealLine } from '@/lib/food-intents';
 import { exportPDF, exportPNG } from '@/lib/exporters';
 
@@ -205,7 +205,10 @@ export default function CardapioEstruturado7D({ logoUrl, layout: initialLayout =
           'JANTAR': buildFallbackLines('JANTAR', idx)
         },
         tips: {
+          'DESJEJUM': { s: 'Hidratação logo ao acordar; incluir proteínas.', a: '' },
+          'LANCHE DA MANHÃ': { s: 'Opções práticas e nutritivas.', a: '' },
           'ALMOÇO': { s: 'Temperar salada com azeite e limão; prefira grelhados/assados.', a: 'Evitar frituras.' },
+          'LANCHE DA TARDE': { s: 'Evitar açúcar em excesso.', a: '' },
           'JANTAR': { s: 'Evitar refeições muito tardias; hidratação adequada.', a: '' },
         }
       };
@@ -247,7 +250,7 @@ export default function CardapioEstruturado7D({ logoUrl, layout: initialLayout =
         </div>
         <div className="flex items-center gap-2">
           <Button variant="outline" size="sm" onClick={handlePrint} aria-label="Imprimir"><Printer className="h-4 w-4" /></Button>
-          <Button variant="outline" size="sm" onClick={handleExportPDF} aria-label="Baixar PDF"><Export className="h-4 w-4" /></Button>
+          <Button variant="outline" size="sm" onClick={handleExportPDF} aria-label="Baixar PDF"><Download className="h-4 w-4" /></Button>
           <Button variant="outline" size="sm" onClick={handleExportPNG} aria-label="Baixar PNG"><ImageIcon className="h-4 w-4" /></Button>
         </div>
       </div>
