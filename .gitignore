@@ -62,3 +62,9 @@ label-studio-data/
 yolo_service/.venv/
 yolo_service/*.pt
 
+
+# Ignore local envs and heavy directories
+.venv/
+external/
+mealie-data/
+*.pt
