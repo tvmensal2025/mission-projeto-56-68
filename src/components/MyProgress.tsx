@@ -307,18 +307,18 @@ const MyProgress: React.FC = () => {
 
       {/* Gráficos baseados no período */}
       <GoogleFitCharts
-        chartData={filteredData}
+        chartData={filteredData as any}
         cardVariants={cardVariants}
         period={period}
-        comparisonData={comparisonData}
+        comparisonData={comparisonData as any}
         userGoals={{ stepsGoal, sleepGoal, activeMinutesGoal, caloriesGoal }}
       />
 
       <AdvancedGoogleFitCharts
-        data={filteredData}
+        data={filteredData as any}
         cardVariants={cardVariants}
         period={period}
-        comparisonData={comparisonData}
+        comparisonData={comparisonData as any}
         userGoals={{ stepsGoal, sleepGoal, activeMinutesGoal, caloriesGoal }}
       />
 

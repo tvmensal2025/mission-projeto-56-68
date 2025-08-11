@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { toast } from 'sonner';
 import { Bot, User as UserIcon, Mic, Camera, Send, Image, X, Loader2 } from 'lucide-react';
+import SofiaConfirmationModal from './SofiaConfirmationModal';
 
 interface Message {
   id: string;
@@ -29,7 +30,9 @@ const SofiaChat: React.FC<SofiaChatProps> = ({ user }) => {
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
-  const scrollAreaRef = useRef<HTMLDivElement>(null);
+const scrollAreaRef = useRef<HTMLDivElement>(null);
+  const [showConfirmationModal, setShowConfirmationModal] = useState(false);
+  const [pendingAnalysis, setPendingAnalysis] = useState<any>(null);
 
   // Criar mensagem inicial quando o usuário estiver disponível
   useEffect(() => {
@@ -57,7 +60,7 @@ O que você gostaria de conversar hoje? Pode me enviar uma foto da sua refeiçã
     try {
       if (!user) return;
       const { data, error } = await supabase
-        .from('user_goal_invitations')
+        .from<any>('user_goal_invitations')
         .select('id, goal_id, invitee_name, invitee_email, status, created_at')
         .eq('invitee_user_id', user.id)
         .eq('status', 'pending')
@@ -78,9 +81,9 @@ O que você gostaria de conversar hoje? Pode me enviar uma foto da sua refeiçã
     try {
       if (!user) return;
       // inserir participação
-      await supabase.from('user_goal_participants').insert({ goal_id: goalId, user_id: user.id, can_view_progress: true });
+      await supabase.from<any>('user_goal_participants').insert({ goal_id: goalId, user_id: user.id, can_view_progress: true });
       // atualizar convite
-      await supabase.from('user_goal_invitations').update({ status: 'approved' }).eq('id', inviteId);
+      await supabase.from<any>('user_goal_invitations').update({ status: 'approved' }).eq('id', inviteId);
       await loadPendingInvites();
       toast.success('Meta sincronizada! Vocês poderão ver o progresso um do outro.');
       setMessages(prev => [...prev, {
@@ -226,6 +229,26 @@ O que você gostaria de conversar hoje? Pode me enviar uma foto da sua refeiçã
           }
         });
 
+        // Se a análise requer confirmação, abrir modal e encerrar fluxo sem enviar mensagem de resultado
+        if (analysisResult.data?.success && analysisResult.data?.requires_confirmation) {
+          const foodsForModal = (analysisResult.data.food_detection?.foods_detected?.length
+            ? analysisResult.data.food_detection.foods_detected
+            : (analysisResult.data.sofia_analysis?.foods_detected?.length
+              ? analysisResult.data.sofia_analysis.foods_detected
+              : (analysisResult.data.alimentos_identificados || [])));
+
+          setPendingAnalysis({
+            analysisId: analysisResult.data.analysis_id,
+            detectedFoods: foodsForModal,
+            userName: userName
+          });
+
+          setShowConfirmationModal(true);
+          toast.success('📸 Análise concluída! Confirme os alimentos no modal.');
+          setIsLoading(false);
+          return;
+        }
+
         if (analysisResult.data && analysisResult.data.sofia_analysis) {
           const analysis = analysisResult.data.sofia_analysis;
           data = {
@@ -249,7 +272,7 @@ O que você gostaria de conversar hoje? Pode me enviar uma foto da sua refeiçã
             conversationHistory
           }
         });
-        data = chatResult.data;
+      const data = chatResult.data;
         error = chatResult.error;
       }
 
@@ -258,6 +281,7 @@ O que você gostaria de conversar hoje? Pode me enviar uma foto da sua refeiçã
         throw new Error(error.message || 'Erro na comunicação com o servidor');
       }
 
+      // A partir daqui, fluxo somente para mensagens de texto
       const sofiaMessage: Message = {
         id: (Date.now() + 1).toString(),
         type: 'sofia',
@@ -490,6 +514,29 @@ O que você gostaria de conversar hoje? Pode me enviar uma foto da sua refeiçã
         onChange={handleImageSelect} 
         className="hidden" 
       />
+
+      {/* Modal de confirmação obrigatório */}
+      {showConfirmationModal && pendingAnalysis && (
+        <SofiaConfirmationModal
+          isOpen={showConfirmationModal}
+          onClose={() => { setShowConfirmationModal(false); setPendingAnalysis(null); }}
+          analysisId={pendingAnalysis.analysisId}
+          detectedFoods={pendingAnalysis.detectedFoods}
+          userName={pendingAnalysis.userName}
+          userId={user?.id || 'guest'}
+          onConfirmation={(response: string) => {
+            const sofiaMessage: Message = {
+              id: (Date.now() + 3).toString(),
+              type: 'sofia',
+              content: response,
+              timestamp: new Date()
+            };
+            setMessages(prev => [...prev, sofiaMessage]);
+            setShowConfirmationModal(false);
+            setPendingAnalysis(null);
+          }}
+        />
+      )}
     </div>
   );
 };

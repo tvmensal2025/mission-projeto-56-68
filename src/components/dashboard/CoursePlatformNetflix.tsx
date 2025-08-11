@@ -548,7 +548,7 @@ const CoursePlatformNetflix = ({ user }: CoursePlatformNetflixProps) => {
                       {adminModeEnabled && (
                         <AdminEditControls 
                           type="course" 
-                          course={course}
+                          course={course as any}
                           onSave={handleSaveEdit}
                         />
                       )}
@@ -688,7 +688,7 @@ const CoursePlatformNetflix = ({ user }: CoursePlatformNetflixProps) => {
             <AdminStatsPanel />
             <AdminEditControls 
               type="lesson" 
-              lesson={selectedLesson}
+              lesson={selectedLesson as any}
               onSave={handleSaveEdit}
             />
           </>

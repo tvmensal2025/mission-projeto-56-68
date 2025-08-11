@@ -163,59 +163,46 @@ const HealthChatBot: React.FC<HealthChatBotProps> = ({ user: propUser }) => {
 
       let sofiaContent = '';
       if (data.success && data.requires_confirmation) {
-        // Mostrar modal de confirmação OBRIGATÓRIO
+        // Modo confirmação obrigatória: NÃO enviar mensagem de resultado antes da confirmação
         const userName = currentUser?.user_metadata?.full_name || currentUser?.email?.split('@')[0] || 'usuário';
-        
-        const sofiaResponse: Message = {
-          id: (Date.now() + 1).toString(),
-          type: 'sofia',
-          content: data.sofia_analysis?.analysis || 'Analisei sua refeição!',
-          timestamp: new Date()
-        };
 
-        setMessages(prev => [...prev, sofiaResponse]);
-        
-        // Configurar dados para o modal de confirmação
+        // Configurar dados para o modal de confirmação (única fonte de verdade)
         const foodsForModal = (data.food_detection?.foods_detected && data.food_detection.foods_detected.length > 0)
           ? data.food_detection.foods_detected
           : (data.sofia_analysis?.foods_detected && data.sofia_analysis.foods_detected.length > 0)
             ? data.sofia_analysis.foods_detected
             : (data.alimentos_identificados || []);
+
         setPendingAnalysis({
           analysisId: data.analysis_id,
           detectedFoods: foodsForModal,
           userName: userName
         });
-        
+
         setShowConfirmationModal(true);
-        toast.success('📸 Análise concluída! Confirme os alimentos.');
-        
+        toast.success('📸 Análise concluída! Confirme os alimentos no modal.');
+
       } else if (data.success) {
-        // Resposta sem confirmação (não deveria acontecer)
+        // Resposta sem confirmação (fallback raro)
         const foodList = data.alimentos_identificados?.join(', ') || 'vários alimentos';
         sofiaContent = `📸 Analisei sua refeição!\n\n✨ Identifiquei: ${foodList}`;
-        
         const sofiaResponse: Message = {
           id: (Date.now() + 1).toString(),
           type: 'sofia',
           content: sofiaContent,
           timestamp: new Date()
         };
-
         setMessages(prev => [...prev, sofiaResponse]);
         toast.success('Foto analisada pela Sofia!');
-        
       } else {
         // Erro na análise
         sofiaContent = data.message || 'Não consegui analisar a imagem. Pode me contar o que você está comendo?';
-        
         const sofiaResponse: Message = {
           id: (Date.now() + 1).toString(),
           type: 'sofia',
           content: sofiaContent,
           timestamp: new Date()
         };
-
         setMessages(prev => [...prev, sofiaResponse]);
       }
 

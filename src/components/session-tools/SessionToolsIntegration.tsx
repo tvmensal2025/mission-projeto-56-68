@@ -48,8 +48,9 @@ export const SessionToolsIntegration: React.FC<SessionToolsIntegrationProps> = (
         .single();
       if (fetchError) throw fetchError;
 
-      const newToolsData = {
-        ...(current?.tools_data || {}),
+      const baseTools: Record<string, any> = (current?.tools_data as Record<string, any>) || {};
+      const newToolsData: Record<string, any> = {
+        ...baseTools,
         [selectedTool.id]: toolResponse
       };
 

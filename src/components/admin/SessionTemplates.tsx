@@ -297,7 +297,7 @@ const SessionTemplates: React.FC = () => {
 
       const { data: createdSession, error: createError } = await supabase
         .from('sessions')
-        .insert({ ...payload, created_by: currentUser.id, is_active: true })
+        .insert({ ...payload, created_by: currentUser.id, is_active: true } as any)
         .select()
         .single();
       if (createError) throw createError;
