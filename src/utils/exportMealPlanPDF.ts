@@ -163,14 +163,22 @@ export async function exportMealPlanToPDF(plan: MealPlanForPDF) {
   drawCard(3, 'Fibras', `${Math.round(total.fiber_g)} g`);
   y += cardH + 10;
 
-  // QR para reabrir plano
+  // QR para reabrir plano (tolerante a ambientes sem a lib instalada)
   try {
+    const spec = 'qrcode';
+    // Evita falha de análise do Vite em ambientes onde 'qrcode' não está instalado
     // @ts-ignore
-    const mod = await import('qrcode');
-    const dataUrl = await (mod as any).toDataURL(window.location.href, { margin: 1, scale: 4 });
-    pdf.addImage(dataUrl, 'PNG', pageWidth - margin - 32, y, 28, 28);
-    pdf.setFontSize(9);
-    pdf.text('Reabra este plano', pageWidth - margin - 32, y + 32);
+    const mod: any = await import(/* @vite-ignore */ spec).catch(() => null);
+    if (mod) {
+      const QR = mod.default ?? mod;
+      const dataUrl = await QR.toDataURL(window.location.href, { margin: 1, scale: 4 });
+      pdf.addImage(dataUrl, 'PNG', pageWidth - margin - 32, y, 28, 28);
+      pdf.setFontSize(9);
+      pdf.text('Reabra este plano', pageWidth - margin - 32, y + 32);
+    } else {
+      pdf.setFontSize(9);
+      pdf.text(`Acesse: ${window.location.href}`, margin, y + 6);
+    }
   } catch {
     pdf.setFontSize(9);
     pdf.text(`Acesse: ${window.location.href}`, margin, y + 6);
