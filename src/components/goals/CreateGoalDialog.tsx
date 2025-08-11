@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
@@ -16,6 +17,7 @@ import { useToast } from '@/hooks/use-toast';
 import { Target, Users, Share2, Trophy, Mail, MessageCircle, X, CalendarIcon, Sparkles, Clock } from 'lucide-react';
 import { format } from 'date-fns';
 import { cn } from '@/lib/utils';
+import { useEffect } from 'react';
 
 interface CreateGoalDialogProps {
   open: boolean;
@@ -186,7 +188,21 @@ export function CreateGoalDialog({ open, onOpenChange, onSuccess }: CreateGoalDi
       
       console.log('📝 Dados para inserção:', goalInsertData);
 
-      // Criar meta - VERSÃO SIMPLIFICADA
+      // Se meta em grupo e o usuário digitou um email/nome mas não clicou no resultado, tentar resolver
+      if (goalData.is_group_goal && invites.length === 0 && userSearch.trim().length > 0) {
+        const { data: found } = await supabase
+          .from('profiles')
+          .select('user_id, full_name, email')
+          .or(`full_name.ilike.%${userSearch.trim()}%,email.ilike.%${userSearch.trim()}%`)
+          .limit(1)
+          .maybeSingle();
+        if (!found) {
+          throw new Error('Participante não encontrado. Verifique o nome/email e selecione na lista.');
+        }
+        invites.push({ type: 'user', value: found.user_id, name: found.full_name || found.email });
+      }
+
+      // Criar meta
       const { data: goal, error: goalError } = await supabase
         .from('user_goals')
         .insert(goalInsertData)
@@ -200,8 +216,40 @@ export function CreateGoalDialog({ open, onOpenChange, onSuccess }: CreateGoalDi
       
       console.log('✅ Meta criada com sucesso:', goal);
 
-      // REMOVIDO TEMPORARIAMENTE: processInvites e outras funcionalidades
-      // para isolar o problema de permission denied
+      // Inserir convites pendentes (aparecerão para o convidado somente após admin aprovar a meta)
+      if (goalData.is_group_goal && invites.length > 0) {
+        const rows = invites.map((inv) => {
+          if (inv.type === 'user') {
+            return { goal_id: goal.id, inviter_id: user.id, invitee_user_id: inv.value, invitee_name: inv.name, status: 'pending' };
+          }
+          if (inv.type === 'email') {
+            return { goal_id: goal.id, inviter_id: user.id, invitee_email: inv.value, invitee_name: inv.name, status: 'pending' };
+          }
+          return null as any;
+        }).filter(Boolean);
+        const { error: invErr } = await supabase.from('user_goal_invitations').insert(rows);
+        if (invErr) {
+          console.error('Erro ao inserir convites:', invErr);
+          throw new Error('Meta criada, mas falhou ao enviar convites. Tente novamente.');
+        }
+
+        // Notificações para cada invite (resolução de contato feita no servidor)
+        for (const inv of invites) {
+          if (inv.type === 'email') {
+            await supabase.functions.invoke('goal-notifications', {
+              body: { type: 'email', recipient: inv.value, goalData: goal, template: 'goal_invite', senderName: user.email }
+            });
+          } else if (inv.type === 'user') {
+            // Tenta e-mail e WhatsApp com lookup server-side via recipientUserId
+            await supabase.functions.invoke('goal-notifications', {
+              body: { type: 'email', recipientUserId: inv.value, goalData: goal, template: 'goal_invite', senderName: user.email }
+            });
+            await supabase.functions.invoke('goal-notifications', {
+              body: { type: 'whatsapp', recipientUserId: inv.value, goalData: goal, template: 'goal_invite', senderName: user.email }
+            });
+          }
+        }
+      }
 
       return goal;
     },
@@ -378,16 +426,47 @@ export function CreateGoalDialog({ open, onOpenChange, onSuccess }: CreateGoalDi
     createGoalMutation.mutate(formData);
   };
 
+  // Busca usuários por nome/email
+  const [userSearch, setUserSearch] = useState('');
+  const [userResults, setUserResults] = useState<{ user_id: string; full_name: string; email: string; phone?: string; city?: string }[]>([]);
+  const [userSearchLoading, setUserSearchLoading] = useState(false);
+  const [userSearchError, setUserSearchError] = useState<string | null>(null);
+
+async function searchUsers(term: string) {
+  if (!term || term.length < 2) { setUserResults([]); return; }
+  setUserSearchError(null);
+  setUserSearchLoading(true);
+  try {
+    // Usar Edge Function para obter usuários de múltiplas fontes com service role
+    const { data, error } = await supabase.functions.invoke('search-users', { body: { term } });
+    if (error) {
+      console.error('Erro na função search-users:', error);
+      setUserResults([]);
+      setUserSearchError('Não foi possível carregar usuários.');
+      return;
+    }
+    setUserResults((data?.data || []).slice(0,50));
+  } catch (err: any) {
+    console.error('Falha ao buscar usuários:', err);
+    setUserResults([]);
+    setUserSearchError('Falha de conexão ao buscar usuários.');
+  } finally {
+    setUserSearchLoading(false);
+  }
+}
+
+  useEffect(() => { const t = setTimeout(() => searchUsers(userSearch), 250); return () => clearTimeout(t); }, [userSearch]);
+
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
+    <Sheet open={open} onOpenChange={onOpenChange}>
+      <SheetContent side="right" className="w-full sm:max-w-2xl overflow-y-auto">
+        <SheetHeader>
+          <SheetTitle className="flex items-center gap-2">
             <Target className="w-5 h-5" />
             Criar Nova Meta
-          </DialogTitle>
-        </DialogHeader>
-        
+          </SheetTitle>
+        </SheetHeader>
+
         <Tabs value={currentTab} onValueChange={setCurrentTab}>
           <TabsList className="grid w-full grid-cols-2">
             <TabsTrigger value="goal">🎯 Meta</TabsTrigger>
@@ -395,22 +474,19 @@ export function CreateGoalDialog({ open, onOpenChange, onSuccess }: CreateGoalDi
           </TabsList>
 
           <TabsContent value="goal" className="space-y-4">
-            {/* Templates Rápidos */}
+            {/* Templates Rápidos (chips compactos) */}
             <div>
               <Label>Templates Rápidos 🚀</Label>
-              <div className="grid grid-cols-2 gap-2 mt-2">
-                {metaTemplates.map((template, index) => (
+              <div className="flex flex-wrap gap-2 mt-2">
+                {metaTemplates.slice(0,4).map((template, index) => (
                   <Button
                     key={index}
-                    variant="outline"
+                    variant="secondary"
                     size="sm"
                     onClick={() => applyTemplate(template)}
-                    className="text-left justify-start h-auto p-3"
+                    className="h-7 px-3 rounded-full"
                   >
-                    <div>
-                      <div className="font-medium text-xs">{template.title}</div>
-                      <div className="text-xs text-muted-foreground">{template.target_value} {template.unit} em {template.timeframe}</div>
-                    </div>
+                    {template.title}
                   </Button>
                 ))}
               </div>
@@ -616,6 +692,47 @@ export function CreateGoalDialog({ open, onOpenChange, onSuccess }: CreateGoalDi
                 />
               </div>
 
+              {formData.is_group_goal && (
+                <div className="space-y-2">
+                  <Label>Adicionar participantes (nome completo ou email)</Label>
+                  <Input value={userSearch} onChange={(e) => setUserSearch(e.target.value)} placeholder="Digite nome ou email" />
+                  {(userResults.length > 0 || userSearchLoading || userSearchError) && (
+                    <div className="max-h-60 overflow-y-auto border rounded p-1 space-y-1">
+                      {userSearchLoading && (
+                        <div className="px-2 py-3 text-sm text-muted-foreground">Carregando...</div>
+                      )}
+                      {userSearchError && !userSearchLoading && (
+                        <div className="px-2 py-3 text-sm text-red-600">{userSearchError}</div>
+                      )}
+                      {userResults.map(u => {
+                        const phoneFmt = u.phone ? u.phone.replace(/^(\+?55)?(\d{2})(\d{5})(\d{4})$/, '($2) $3-$4') : '';
+                        return (
+                          <Button key={u.user_id} variant="ghost" className="w-full justify-between px-2 py-2 text-left" onClick={() => {
+                            setInvites(prev => [...prev, { type: 'user', value: u.user_id, name: u.full_name || u.email }]);
+                            setUserResults([]); setUserSearch('');
+                          }}>
+                            <div className="flex flex-col items-start">
+                              <span className="text-sm font-medium">{u.full_name}</span>
+                              <span className="text-xs text-muted-foreground">
+                                {u.email}
+                                {u.phone ? ` • ${phoneFmt || u.phone}` : ''}
+                                {u.city ? ` • ${u.city}` : ''}
+                              </span>
+                            </div>
+                          </Button>
+                        );
+                      })}
+                      {!userSearchLoading && !userSearchError && userResults.length === 0 && (
+                        <div className="px-2 py-3 text-sm text-muted-foreground">Nenhum usuário encontrado.</div>
+                      )}
+                      {userResults.length >= 50 && (
+                        <div className="text-xs text-muted-foreground px-2 pb-1">Mostrando os primeiros 50 resultados. Continue digitando para refinar.</div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+
               <div className="flex items-center justify-between">
                 <div className="space-y-0.5">
                   <Label>Evidências Obrigatórias</Label>
@@ -626,6 +743,19 @@ export function CreateGoalDialog({ open, onOpenChange, onSuccess }: CreateGoalDi
                 <Switch
                   checked={formData.evidence_required}
                   onCheckedChange={(checked) => setFormData(prev => ({ ...prev, evidence_required: checked }))}
+                />
+              </div>
+
+              <div className="flex items-center justify-between">
+                <div className="space-y-0.5">
+                  <Label>Enviar para Desafio</Label>
+                  <p className="text-sm text-muted-foreground">
+                    Requer aprovação do administrador antes de publicar
+                  </p>
+                </div>
+                <Switch
+                  checked={formData.transform_to_challenge}
+                  onCheckedChange={(checked) => setFormData(prev => ({ ...prev, transform_to_challenge: checked }))}
                 />
               </div>
             </div>
@@ -708,24 +838,9 @@ export function CreateGoalDialog({ open, onOpenChange, onSuccess }: CreateGoalDi
 
         </Tabs>
 
-        <div className="flex justify-end gap-3 pt-4">
+        <div className="flex justify-end gap-3 pt-4 sticky bottom-0 bg-background py-3">
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             Cancelar
-          </Button>
-          <Button 
-            variant="secondary" 
-            onClick={async () => {
-              console.log('🔍 Debug: Verificando autenticação...');
-              const { data: { user }, error } = await supabase.auth.getUser();
-              const { data: { session }, error: sessionError } = await supabase.auth.getSession();
-              console.log('🔍 Debug Auth:', { user, error, session, sessionError });
-              toast({
-                title: "Debug Auth",
-                description: user ? `Usuário: ${user.email}` : "Não autenticado",
-              });
-            }}
-          >
-            Debug Auth
           </Button>
           <Button 
             onClick={handleSubmit}
@@ -734,7 +849,7 @@ export function CreateGoalDialog({ open, onOpenChange, onSuccess }: CreateGoalDi
             {createGoalMutation.isPending ? 'Criando...' : 'Criar Meta'}
           </Button>
         </div>
-      </DialogContent>
-    </Dialog>
+      </SheetContent>
+    </Sheet>
   );
 }

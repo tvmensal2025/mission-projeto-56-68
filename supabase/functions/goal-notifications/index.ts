@@ -9,7 +9,8 @@ const corsHeaders = {
 
 interface NotificationRequest {
   type: 'email' | 'whatsapp';
-  recipient: string;
+  recipient?: string; // opcional: pode ser resolvido por recipientUserId
+  recipientUserId?: string; // permite lookup server-side (bypass RLS)
   goalData: any;
   template: 'goal_approved' | 'goal_invite';
   senderName?: string;
@@ -27,12 +28,46 @@ const handler = async (req: Request): Promise<Response> => {
   }
 
   try {
-    const { type, recipient, goalData, template, senderName }: NotificationRequest = await req.json();
+    const { type, recipient, recipientUserId, goalData, template, senderName }: NotificationRequest = await req.json();
 
-    if (type === 'email') {
-      await sendEmailNotification(recipient, goalData, template, senderName);
-    } else if (type === 'whatsapp') {
-      await sendWhatsAppNotification(recipient, goalData, template, senderName);
+    // Resolver contato no servidor, usando SERVICE ROLE (bypass RLS)
+    let resolvedRecipient = recipient;
+    let resolvedPhone: string | undefined;
+
+    if ((!resolvedRecipient || type === 'whatsapp') && recipientUserId) {
+      // Tentar profiles primeiro
+      const { data: prof } = await supabase
+        .from('profiles')
+        .select('email, phone')
+        .eq('user_id', recipientUserId)
+        .maybeSingle();
+
+      if (type === 'email') {
+        resolvedRecipient = resolvedRecipient || prof?.email || undefined;
+        // fallback para auth.admin
+        if (!resolvedRecipient && recipientUserId) {
+          try {
+            const { data: userAdmin } = await supabase.auth.admin.getUserById(recipientUserId);
+            resolvedRecipient = userAdmin?.user?.email ?? undefined;
+          } catch (_) {
+            // ignore
+          }
+        }
+      } else if (type === 'whatsapp') {
+        resolvedPhone = prof?.phone || undefined;
+      }
+    }
+
+    if (type === 'email' && resolvedRecipient) {
+      await sendEmailNotification(resolvedRecipient, goalData, template, senderName);
+    } else if (type === 'whatsapp' && (resolvedRecipient || resolvedPhone)) {
+      await sendWhatsAppNotification(resolvedPhone || resolvedRecipient!, goalData, template, senderName);
+    } else {
+      // Nada resolvido; retornar 202 aceito mas sem envio
+      return new Response(JSON.stringify({ success: false, reason: 'recipient_not_resolved' }), {
+        status: 202,
+        headers: { "Content-Type": "application/json", ...corsHeaders },
+      });
     }
 
     return new Response(JSON.stringify({ success: true }), {
