@@ -4,31 +4,40 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
 }
 
 interface GoogleFitData {
   steps: number;
-  calories: number;
+  caloriesActive: number; // ativas
   distance: number;
-  heartRate: number;
+  heartRateAvg: number;
+  heartRateMin?: number;
+  heartRateMax?: number;
+  heartMinutes?: number;
+  sleepDuration?: number; // horas
   weight?: number;
   height?: number;
-  activeMinutes?: number;
-  sleepDuration?: number;
-  heartRateZones?: {
-    restingHeartRate?: number;
-    averageHeartRate?: number;
-    maxHeartRate?: number;
-  };
-  workouts?: Array<{
-    activity: string;
-    duration: number;
-    calories: number;
-  }>;
 }
 
+// Estrutura diária para gravar 1 linha por dia no banco
+interface DailyFitData {
+  date: string; // YYYY-MM-DD (local America/Sao_Paulo)
+  steps: number;
+  caloriesActive: number;
+  distance: number;
+  heartRateAvg: number;
+  heartRateMin?: number;
+  heartRateMax?: number;
+  heartMinutes?: number;
+  weight?: number;
+  height?: number;
+  sleepDuration?: number;
+}
+
+const TIMEZONE_ID = 'America/Sao_Paulo';
+
 serve(async (req) => {
-  // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
@@ -36,239 +45,187 @@ serve(async (req) => {
   try {
     const supabaseClient = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_ANON_KEY') ?? '',
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
     );
 
     const authHeader = req.headers.get('Authorization')!;
     const token = authHeader.replace('Bearer ', '');
     const { data: user } = await supabaseClient.auth.getUser(token);
-
-    if (!user.user) {
-      throw new Error('Unauthorized');
-    }
+    if (!user.user) throw new Error('Unauthorized');
 
     const { access_token, refresh_token, date_range } = await req.json();
 
-    console.log('Sincronizando dados do Google Fit para usuário:', user.user.id);
+    const dailyData = await fetchGoogleFitDaily(access_token, date_range);
 
-    // Buscar dados do Google Fit API
-    const fitData = await fetchGoogleFitData(access_token, date_range);
-
-    // Salvar dados no Supabase usando a estrutura expandida da tabela
-    if (fitData.steps > 0 || fitData.calories > 0 || fitData.heartRate > 0) {
-      const googleFitRecord = {
+    for (const d of dailyData) {
+      const googleFitRecord: any = {
         user_id: user.user.id,
-        data_date: new Date().toISOString().split('T')[0],
-        steps_count: fitData.steps,
-        calories_burned: fitData.calories,
-        distance_meters: fitData.distance,
-        heart_rate_avg: fitData.heartRate,
-        active_minutes: fitData.activeMinutes || 0,
-        sleep_duration_hours: fitData.sleepDuration || 0,
-        weight_kg: fitData.weight,
-        height_cm: fitData.height ? fitData.height * 100 : undefined, // Converter de metros para cm
-        heart_rate_resting: fitData.heartRateZones?.restingHeartRate,
-        heart_rate_max: fitData.heartRateZones?.maxHeartRate,
+        data_date: d.date,
+        steps_count: d.steps,
+        calories_burned: Math.max(0, Math.round(d.caloriesActive || 0)),
+        distance_meters: Math.round(d.distance || 0),
+        heart_rate_avg: Math.round(d.heartRateAvg || 0),
+        heart_rate_resting: d.heartRateMin ?? null,
+        heart_rate_max: d.heartRateMax ?? null,
+        active_minutes: Math.round(d.heartMinutes || 0), // coluna existente reaproveitada p/ heart minutes
+        sleep_duration_hours: d.sleepDuration || 0,
+        weight_kg: d.weight,
+        height_cm: d.height ? Math.round(d.height * 100) : undefined,
         sync_timestamp: new Date().toISOString(),
-        raw_data: {
-          heartRateZones: fitData.heartRateZones,
-          workouts: fitData.workouts,
-          synced_at: new Date().toISOString()
-        }
       };
 
-      console.log('💾 Salvando dados no Supabase:', googleFitRecord);
-      
-      await supabaseClient
-        .from('google_fit_data')
-        .upsert(googleFitRecord);
+      await supabaseClient.from('google_fit_data').upsert(googleFitRecord, { onConflict: 'user_id,data_date' });
     }
 
-    console.log('Dados sincronizados com sucesso:', fitData);
-
     return new Response(
-      JSON.stringify({ 
-        success: true, 
-        data: fitData,
-        message: 'Dados do Google Fit sincronizados com sucesso'
-      }),
-      { 
-        headers: { 
-          ...corsHeaders, 
-          'Content-Type': 'application/json' 
-        } 
-      }
+      JSON.stringify({ success: true, days: dailyData.length }),
+      { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
 
   } catch (error) {
     console.error('Erro na sincronização do Google Fit:', error);
     return new Response(
-      JSON.stringify({ 
-        error: error.message,
-        success: false 
-      }),
-      { 
-        status: 400,
-        headers: { 
-          ...corsHeaders, 
-          'Content-Type': 'application/json' 
-        } 
-      }
+      JSON.stringify({ error: (error as Error).message, success: false }),
+      { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   }
 });
 
-async function fetchGoogleFitData(accessToken: string, dateRange: { startDate: string, endDate: string }): Promise<GoogleFitData> {
+function toLocalDateString(ms: number, timeZone = TIMEZONE_ID): string {
+  const fmt = new Intl.DateTimeFormat('en-CA', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit' });
+  // en-CA gives YYYY-MM-DD
+  const [{ value: y }, , { value: m }, , { value: d }] = fmt.formatToParts(new Date(ms));
+  return `${y}-${m}-${d}`;
+}
+
+async function fetchGoogleFitDaily(accessToken: string, dateRange: { startDate: string, endDate: string }): Promise<DailyFitData[]> {
   const baseUrl = 'https://www.googleapis.com/fitness/v1/users/me';
-  
-  const headers = {
-    'Authorization': `Bearer ${accessToken}`,
-    'Content-Type': 'application/json',
-  };
+  const headers = { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' };
 
-  const startTimeMillis = new Date(dateRange.startDate).getTime();
-  const endTimeMillis = new Date(dateRange.endDate).getTime();
+  // Construir janelas em milissegundos a partir de datas locais (00:00 do TZ local)
+  const startLocal = new Date(`${dateRange.startDate}T00:00:00`);
+  const endLocal = new Date(`${dateRange.endDate}T23:59:59`);
+  const startTimeMillis = startLocal.getTime();
+  const endTimeMillis = endLocal.getTime();
 
-  // Função auxiliar para fazer requisições
-  const fetchFitnessData = async (dataTypeName: string, dataSourceId?: string) => {
+  const fetchAggregate = async (dataTypeName: string, dataSourceId?: string, bucket: any = { period: { type: 'day', value: 1, timeZoneId: TIMEZONE_ID } }) => {
     const body: any = {
-      aggregateBy: [{
-        dataTypeName,
-        ...(dataSourceId && { dataSourceId })
-      }],
-      bucketByTime: { durationMillis: 86400000 }, // 1 dia
+      aggregateBy: [{ dataTypeName, ...(dataSourceId && { dataSourceId }) }],
+      bucketByTime: bucket,
       startTimeMillis,
       endTimeMillis,
     };
-
-    const response = await fetch(`${baseUrl}/dataset:aggregate`, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify(body),
-    });
-
-    return response.json();
+    const resp = await fetch(`${baseUrl}/dataset:aggregate`, { method: 'POST', headers, body: JSON.stringify(body) });
+    return resp.json();
   };
 
   try {
-    // Buscar todos os dados em paralelo
     const [
       stepsData,
-      caloriesData,
+      caloriesExpendedData,
       distanceData,
       heartRateData,
-      activeMinutesData,
+      heartMinutesData,
       weightData,
       heightData,
-      sleepData
+      sleepData,
+      bmrData
     ] = await Promise.all([
-      // Passos
-      fetchFitnessData('com.google.step_count.delta', 'derived:com.google.step_count.delta:com.google.android.gms:estimated_steps'),
-      
-      // Calorias
-      fetchFitnessData('com.google.calories.expended', 'derived:com.google.calories.expended:com.google.android.gms:merge_calories_expended'),
-      
-      // Distância
-      fetchFitnessData('com.google.distance.delta', 'derived:com.google.distance.delta:com.google.android.gms:merge_distance_delta'),
-      
-      // Frequência Cardíaca
-      fetchFitnessData('com.google.heart_rate.bpm'),
-      
-      // Minutos Ativos
-      fetchFitnessData('com.google.active_minutes'),
-      
-      // Peso
-      fetchFitnessData('com.google.weight'),
-      
-      // Altura
-      fetchFitnessData('com.google.height'),
-      
-      // Sono
-      fetchFitnessData('com.google.sleep.segment')
+      fetchAggregate('com.google.step_count.delta', 'derived:com.google.step_count.delta:com.google.android.gms:estimated_steps'),
+      fetchAggregate('com.google.calories.expended', 'derived:com.google.calories.expended:com.google.android.gms:merge_calories_expended'),
+      fetchAggregate('com.google.distance.delta', 'derived:com.google.distance.delta:com.google.android.gms:merge_distance_delta'),
+      fetchAggregate('com.google.heart_rate.bpm', 'derived:com.google.heart_rate.bpm:com.google.android.gms:merge_heart_rate_bpm'),
+      fetchAggregate('com.google.heart_minutes', 'derived:com.google.heart_minutes:com.google.android.gms:merge_heart_minutes'),
+      fetchAggregate('com.google.weight'),
+      fetchAggregate('com.google.height'),
+      fetchAggregate('com.google.sleep.segment'),
+      fetchAggregate('com.google.basal_metabolic_rate')
     ]);
 
-    console.log('📊 Dados recebidos do Google Fit:', {
-      steps: !!stepsData.bucket?.[0]?.dataset?.[0]?.point?.[0],
-      calories: !!caloriesData.bucket?.[0]?.dataset?.[0]?.point?.[0],
-      distance: !!distanceData.bucket?.[0]?.dataset?.[0]?.point?.[0],
-      heartRate: !!heartRateData.bucket?.[0]?.dataset?.[0]?.point?.[0],
-      activeMinutes: !!activeMinutesData.bucket?.[0]?.dataset?.[0]?.point?.[0],
-      weight: !!weightData.bucket?.[0]?.dataset?.[0]?.point?.[0],
-      height: !!heightData.bucket?.[0]?.dataset?.[0]?.point?.[0],
-      sleep: !!sleepData.bucket?.[0]?.dataset?.[0]?.point?.[0]
-    });
+    const buckets = Math.max(
+      stepsData.bucket?.length || 0,
+      caloriesExpendedData.bucket?.length || 0,
+      distanceData.bucket?.length || 0,
+      heartRateData.bucket?.length || 0,
+      heartMinutesData.bucket?.length || 0,
+      sleepData.bucket?.length || 0,
+      weightData.bucket?.length || 0,
+      heightData.bucket?.length || 0,
+      bmrData.bucket?.length || 0,
+    );
 
-    // Processar dados com fallbacks seguros
-    const steps = stepsData.bucket?.[0]?.dataset?.[0]?.point?.[0]?.value?.[0]?.intVal || 0;
-    const calories = caloriesData.bucket?.[0]?.dataset?.[0]?.point?.[0]?.value?.[0]?.fpVal || 0;
-    const distance = distanceData.bucket?.[0]?.dataset?.[0]?.point?.[0]?.value?.[0]?.fpVal || 0;
-    
-    // Frequência cardíaca - pode ter múltiplos pontos, calcular média
-    let heartRate = 0;
-    const heartRatePoints = heartRateData.bucket?.[0]?.dataset?.[0]?.point || [];
-    if (heartRatePoints.length > 0) {
-      const totalHeartRate = heartRatePoints.reduce((sum: number, point: any) => 
-        sum + (point.value?.[0]?.fpVal || 0), 0);
-      heartRate = Math.round(totalHeartRate / heartRatePoints.length);
+    const days: DailyFitData[] = [];
+
+    for (let i = 0; i < buckets; i++) {
+      const startMs = parseInt(
+        stepsData.bucket?.[i]?.startTimeMillis ||
+        caloriesExpendedData.bucket?.[i]?.startTimeMillis ||
+        distanceData.bucket?.[i]?.startTimeMillis ||
+        heartRateData.bucket?.[i]?.startTimeMillis ||
+        heartMinutesData.bucket?.[i]?.startTimeMillis ||
+        sleepData.bucket?.[i]?.startTimeMillis ||
+        `${Date.now()}`
+      );
+      const localDate = toLocalDateString(startMs, TIMEZONE_ID);
+
+      const getPoints = (data: any) => data.bucket?.[i]?.dataset?.[0]?.point || [];
+
+      const steps = getPoints(stepsData).reduce((sum: number, p: any) => sum + (p.value?.[0]?.intVal || 0), 0);
+      const caloriesTotal = getPoints(caloriesExpendedData).reduce((sum: number, p: any) => sum + (p.value?.[0]?.fpVal || 0), 0);
+      // BMR diário (kcal/dia). Usar média do dia ou último ponto do dia
+      let basalKcal = 0;
+      const bmrPts = getPoints(bmrData);
+      if (bmrPts.length) {
+        const avgBmr = bmrPts.reduce((sum: number, p: any) => sum + (p.value?.[0]?.fpVal || 0), 0) / bmrPts.length;
+        basalKcal = isFinite(avgBmr) ? avgBmr : 0;
+      }
+      const caloriesActive = Math.max(0, caloriesTotal - basalKcal);
+
+      const distance = getPoints(distanceData).reduce((sum: number, p: any) => sum + (p.value?.[0]?.fpVal || 0), 0);
+
+      // HR min/avg/max
+      const hrPts = getPoints(heartRateData).map((p: any) => p.value?.[0]?.fpVal || 0).filter((v: number) => v > 0);
+      const heartRateAvg = hrPts.length ? Math.round(hrPts.reduce((a: number, b: number) => a + b, 0) / hrPts.length) : 0;
+      const heartRateMin = hrPts.length ? Math.min(...hrPts) : undefined;
+      const heartRateMax = hrPts.length ? Math.max(...hrPts) : undefined;
+
+      // heart minutes (minutos de intensidade)
+      const heartMinutes = getPoints(heartMinutesData).reduce((sum: number, p: any) => sum + (p.value?.[0]?.fpVal || 0), 0);
+
+      // Peso/altura últimos do dia
+      const wPts = getPoints(weightData);
+      const hPts = getPoints(heightData);
+      const weight = wPts.length ? wPts[wPts.length - 1]?.value?.[0]?.fpVal : undefined;
+      const height = hPts.length ? hPts[hPts.length - 1]?.value?.[0]?.fpVal : undefined;
+
+      // Sono: somar segmentos do bucket (já em dia local por period TZ)
+      let sleepDuration = 0;
+      const sPts = getPoints(sleepData);
+      for (const p of sPts) {
+        const start = p.startTimeNanos ? parseInt(p.startTimeNanos) / 1_000_000 : 0;
+        const end = p.endTimeNanos ? parseInt(p.endTimeNanos) / 1_000_000 : 0;
+        sleepDuration += Math.max(0, end - start);
+      }
+      sleepDuration = Math.round(sleepDuration / (1000 * 60 * 60));
+
+      days.push({
+        date: localDate,
+        steps,
+        caloriesActive,
+        distance,
+        heartRateAvg,
+        heartRateMin,
+        heartRateMax,
+        heartMinutes,
+        weight,
+        height,
+        sleepDuration,
+      });
     }
-    
-    // Minutos ativos
-    const activeMinutes = activeMinutesData.bucket?.[0]?.dataset?.[0]?.point?.[0]?.value?.[0]?.intVal || 0;
-    
-    // Peso (mais recente)
-    const weight = weightData.bucket?.[0]?.dataset?.[0]?.point?.[0]?.value?.[0]?.fpVal;
-    
-    // Altura (mais recente)
-    const height = heightData.bucket?.[0]?.dataset?.[0]?.point?.[0]?.value?.[0]?.fpVal;
-    
-    // Sono - somar duração de todos os segmentos
-    let sleepDuration = 0;
-    const sleepPoints = sleepData.bucket?.[0]?.dataset?.[0]?.point || [];
-    if (sleepPoints.length > 0) {
-      sleepDuration = sleepPoints.reduce((total: number, point: any) => {
-        const startTime = point.startTimeNanos ? parseInt(point.startTimeNanos) / 1000000 : 0;
-        const endTime = point.endTimeNanos ? parseInt(point.endTimeNanos) / 1000000 : 0;
-        return total + (endTime - startTime);
-      }, 0);
-      sleepDuration = Math.round(sleepDuration / (1000 * 60 * 60)); // Converter para horas
-    }
 
-    console.log('✅ Dados processados:', {
-      steps,
-      calories: Math.round(calories),
-      distance: Math.round(distance),
-      heartRate,
-      activeMinutes,
-      weight,
-      height,
-      sleepDuration
-    });
-
-    return {
-      steps,
-      calories: Math.round(calories),
-      distance: Math.round(distance),
-      heartRate,
-      weight,
-      height,
-      activeMinutes,
-      sleepDuration,
-      heartRateZones: heartRate > 0 ? {
-        averageHeartRate: heartRate,
-        restingHeartRate: Math.max(50, heartRate - 20), // Estimativa
-        maxHeartRate: Math.min(200, heartRate + 30) // Estimativa
-      } : undefined
-    };
-
-  } catch (error) {
-    console.error('❌ Erro ao buscar dados do Google Fit:', error);
-    
-    // Retornar dados básicos em caso de erro
-    return {
-      steps: 0,
-      calories: 0,
-      distance: 0,
-      heartRate: 0,
-    };
+    return days;
+  } catch (e) {
+    console.error('Erro ao agregar por dia:', e);
+    return [];
   }
 }

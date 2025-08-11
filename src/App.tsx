@@ -7,6 +7,8 @@ import { supabase } from "@/integrations/supabase/client";
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { PWAInstallPrompt } from "./components/PWAInstallPrompt";
+import { IOSInstallPrompt } from "./components/IOSInstallPrompt";
 
 import Index from "./pages/Index";
 import HomePage from "./pages/HomePage";
@@ -60,7 +62,7 @@ import ProfessionalEvaluationPage from "./pages/ProfessionalEvaluationPageClean"
 import { TestDesafioModal } from "./components/TestDesafioModal";
 import SofiaPage from "./pages/SofiaPage";
 import SubscriptionPage from "./pages/SubscriptionPage";
-import SofiaNutricionalPage from "./pages/SofiaNutricionalPage";
+import { SofiaNutritionalPage } from "./pages/SofiaNutritionalPage";
 
 import RankingPage from "./components/RankingPage";
 import TermsPage from "./pages/TermsPage";
@@ -187,7 +189,7 @@ const App: React.FC = () => {
             {/* Sofia - Dedicated nutrition AI page */}
             <Route path="/sofia" element={<SofiaPage />} />
             {/* Nova aba Sofia Nutricional */}
-            <Route path="/sofia-nutricional" element={<SofiaNutricionalPage />} />
+            <Route path="/sofia-nutricional" element={<SofiaNutritionalPage />} />
             
             {/* API Test - Componente para testar APIs */}
             <Route path="/api-test" element={<ApiTest />} />
@@ -233,6 +235,10 @@ const App: React.FC = () => {
           
           {/* Chat Bot Global */}
           <HealthChatBot user={null} />
+          {/* PWA Install prompt (Android/Chrome) */}
+          <PWAInstallPrompt />
+          {/* iOS Add to Home Screen helper */}
+          <IOSInstallPrompt />
         </BrowserRouter>
       </TooltipProvider>
     </QueryClientProvider>

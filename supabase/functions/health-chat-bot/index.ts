@@ -101,8 +101,8 @@ serve(async (req) => {
       }
     }
 
-    // Montar prompt personalizado da Sofia
-    const systemPrompt = `Você é a Sofia, uma nutricionista virtual amigável e especializada do Instituto dos Sonhos. 
+    // Montar prompt personalizado da Sofia (permitir override por configuração da funcionalidade)
+    let systemPrompt = `Você é a Sofia, uma nutricionista virtual amigável e especializada do Instituto dos Sonhos. 
 
 PERSONALIDADE:
 - Carinhosa, empática e motivadora
@@ -141,7 +141,24 @@ ESPECIALIDADES:
 - Sugestões de alimentos regionais saudáveis
 - Estratégias para mudança de hábitos
 
-Responda de forma natural, carinhosa e útil! SEMPRE use o nome do usuário: ${actualUserName}`;
+  Responda de forma natural, carinhosa e útil! SEMPRE use o nome do usuário: ${actualUserName}`;
+
+    // Se houver configuração de IA para daily_chat (ou outra), usar system_prompt do DB
+    try {
+      const supabaseUrlCfg = Deno.env.get('SUPABASE_URL');
+      const supabaseKeyCfg = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+      if (supabaseUrlCfg && supabaseKeyCfg) {
+        const db = createClient(supabaseUrlCfg, supabaseKeyCfg);
+        const { data: chatCfg } = await db
+          .from('ai_configurations')
+          .select('system_prompt, is_enabled')
+          .eq('functionality', 'daily_chat')
+          .single();
+        if (chatCfg?.system_prompt && chatCfg.is_enabled !== false) {
+          systemPrompt = chatCfg.system_prompt;
+        }
+      }
+    } catch (_) {}
 
     // Verificar se pelo menos uma API está configurada
     if (!openAIApiKey && !googleAIApiKey) {

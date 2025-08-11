@@ -304,6 +304,7 @@ export const CourseManagementNew = () => {
         title: lessonData.title,
         description: lessonData.description || "Aula criada automaticamente",
         video_url: lessonData.videoUrl || "",
+        thumbnail_url: (lessonData as any).thumbnailUrl || undefined,
         content: lessonData.richTextContent || lessonData.mixedContent || "",
         duration_minutes: lessonData.duration || 0,
         order_index: lessonData.order || 1,

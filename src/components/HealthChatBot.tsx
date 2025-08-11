@@ -176,9 +176,14 @@ const HealthChatBot: React.FC<HealthChatBotProps> = ({ user: propUser }) => {
         setMessages(prev => [...prev, sofiaResponse]);
         
         // Configurar dados para o modal de confirmação
+        const foodsForModal = (data.food_detection?.foods_detected && data.food_detection.foods_detected.length > 0)
+          ? data.food_detection.foods_detected
+          : (data.sofia_analysis?.foods_detected && data.sofia_analysis.foods_detected.length > 0)
+            ? data.sofia_analysis.foods_detected
+            : (data.alimentos_identificados || []);
         setPendingAnalysis({
           analysisId: data.analysis_id,
-          detectedFoods: data.food_detection?.foods_detected || [],
+          detectedFoods: foodsForModal,
           userName: userName
         });
         

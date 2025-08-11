@@ -268,7 +268,7 @@ export const UpdateProgressModal = ({ goal, onUpdate, children }: UpdateProgress
         {children}
       </DialogTrigger>
       
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="w-[95vw] max-w-md max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <TrendingUp className="w-5 h-5 text-primary" />
@@ -574,7 +574,7 @@ export const UpdateProgressModal = ({ goal, onUpdate, children }: UpdateProgress
           </div>
 
           {/* Ações */}
-          <div className="flex gap-2 pt-4">
+          <div className="sticky bottom-0 bg-background pt-4 pb-2 flex gap-2">
             <Button
               type="button"
               variant="outline"

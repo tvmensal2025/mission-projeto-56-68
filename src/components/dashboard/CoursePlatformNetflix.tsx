@@ -18,25 +18,34 @@ import {
 } from "lucide-react";
 import { useAdminMode } from "@/hooks/useAdminMode";
 import { AdminEditControls, AdminStatsPanel, AdminViewToggle } from "@/components/admin/AdminEditControls";
-
-interface Course {
-  id: string;
-  title: string;
-  description: string;
-  thumbnail_url: string;
-  category: string;
-  instructor_name: string;
-  lessons: Lesson[];
-}
+import { supabase } from "@/integrations/supabase/client";
 
 interface Lesson {
   id: string;
   title: string;
-  description: string;
-  duration: number;
-  thumbnail_url: string;
-  video_url: string;
+  description?: string;
+  duration: number; // seconds for UI
+  thumbnail_url?: string;
+  video_url?: string;
   is_completed: boolean;
+}
+
+interface Course {
+  id: string;
+  title: string;
+  description?: string;
+  thumbnail_url?: string;
+  category?: string;
+  instructor_name?: string;
+  lessons: Lesson[];
+}
+
+interface Module {
+  id: string;
+  course_id: string;
+  title: string;
+  description?: string;
+  order_index?: number;
 }
 
 interface CoursePlatformNetflixProps {
@@ -49,6 +58,9 @@ const CoursePlatformNetflix = ({ user }: CoursePlatformNetflixProps) => {
   const [selectedLesson, setSelectedLesson] = useState<Lesson | null>(null);
   const [showVideo, setShowVideo] = useState(false);
   const [dashboardViewMode, setDashboardViewMode] = useState<'courses' | 'modules'>('courses');
+  const [loading, setLoading] = useState<boolean>(true);
+  const [dbCourses, setDbCourses] = useState<Course[]>([]);
+  const [dbModules, setDbModules] = useState<Module[]>([]);
   
   // Hook para modo admin
   const { isAdmin, adminModeEnabled, toggleAdminMode } = useAdminMode(user);
@@ -267,6 +279,26 @@ const CoursePlatformNetflix = ({ user }: CoursePlatformNetflixProps) => {
     setSelectedLesson(lesson);
     setCurrentView('player');
   };
+  const getVideoEmbedUrl = (raw?: string) => {
+    const fallback = 'https://www.youtube.com/embed/dQw4w9WgXcQ?autoplay=1';
+    if (!raw) return fallback;
+    try {
+      // Handle YouTube watch and short links
+      if (raw.includes('youtube.com/watch')) {
+        const u = new URL(raw);
+        const v = u.searchParams.get('v');
+        if (v) return `https://www.youtube.com/embed/${v}?autoplay=1`;
+      }
+      if (raw.includes('youtu.be/')) {
+        const id = raw.split('youtu.be/')[1]?.split(/[?&#]/)[0];
+        if (id) return `https://www.youtube.com/embed/${id}?autoplay=1`;
+      }
+      // If already embed or other providers, return as-is
+      return raw;
+    } catch {
+      return fallback;
+    }
+  };
 
   const handleBackToHome = () => {
     setCurrentView('home');
@@ -283,6 +315,102 @@ const CoursePlatformNetflix = ({ user }: CoursePlatformNetflixProps) => {
     console.log('Salvando alterações:', data);
     // Aqui você implementaria a lógica para salvar no banco de dados
   };
+
+  // Carregar cursos/módulos/aulas do banco e exibir automaticamente
+  useEffect(() => {
+    const loadData = async () => {
+      try {
+        setLoading(true);
+        const { data: coursesData, error: coursesError } = await supabase
+          .from('courses')
+          .select('*')
+          .eq('is_published', true)
+          .order('created_at', { ascending: false });
+
+        if (coursesError) throw coursesError;
+
+        const courses: Course[] = [];
+        const allModules: Module[] = [];
+
+        await Promise.all(
+          (coursesData || []).map(async (c: any) => {
+            const courseBase: Course = {
+              id: c.id,
+              title: c.title,
+              description: c.description ?? undefined,
+              thumbnail_url: c.thumbnail_url ?? undefined,
+              category: c.category ?? undefined,
+              instructor_name: c.instructor_name ?? undefined,
+              lessons: [],
+            };
+
+            const { data: modulesData, error: modulesError } = await supabase
+              .from('course_modules')
+              .select('*')
+              .eq('course_id', c.id)
+              .order('order_index', { ascending: true });
+            if (modulesError) throw modulesError;
+
+            const moduleIds = (modulesData || []).map((m: any) => m.id);
+            if ((modulesData || []).length > 0) {
+              allModules.push(
+                ...modulesData.map((m: any) => ({
+                  id: m.id,
+                  course_id: m.course_id,
+                  title: m.title,
+                  description: m.description ?? undefined,
+                  order_index: m.order_index ?? undefined,
+                }))
+              );
+            }
+
+            let lessonsRows: any[] = [];
+            if (moduleIds.length > 0) {
+              const { data: lessonsData, error: lessonsError } = await supabase
+                .from('lessons')
+                .select('*')
+                .in('module_id', moduleIds)
+                .order('order_index', { ascending: true });
+
+              if (!lessonsError && lessonsData && lessonsData.length > 0) {
+                lessonsRows = lessonsData;
+              } else {
+                const { data: clData } = await (supabase as any)
+                  .from('course_lessons')
+                  .select('*')
+                  .in('module_id', moduleIds)
+                  .order('order_index', { ascending: true });
+                lessonsRows = clData || [];
+              }
+            }
+
+            courseBase.lessons = (lessonsRows || []).map((l: any) => ({
+              id: l.id,
+              title: l.title,
+              description: l.description ?? undefined,
+              duration: (l.duration_minutes || 0) * 60,
+              thumbnail_url: l.thumbnail_url ?? '/placeholder.svg',
+              video_url: l.video_url ?? undefined,
+              is_completed: false,
+            }));
+
+            courses.push(courseBase);
+          })
+        );
+
+        setDbCourses(courses);
+        setDbModules(allModules);
+      } catch (e) {
+        console.error('Falha ao carregar cursos/módulos/aulas:', e);
+        setDbCourses([]);
+        setDbModules([]);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadData();
+  }, []);
 
   // HOME VIEW - Grid de cursos (320x480px cards)
   if (currentView === 'home') {
@@ -398,43 +526,51 @@ const CoursePlatformNetflix = ({ user }: CoursePlatformNetflixProps) => {
             )}
           </div>
           
-          {/* Grid Responsivo - 1 coluna no mobile, 2 no tablet, 3-4 no desktop */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-3 sm:gap-4 md:gap-6">
-            {allCourses.map((course) => (
-              <Card 
-                key={course.id} 
-                className="w-full max-w-sm mx-auto sm:max-w-none h-auto sm:h-[400px] md:h-[450px] lg:h-[480px] bg-gray-900 border-gray-700 cursor-pointer hover:scale-105 transition-all duration-300 group relative"
-                onClick={() => handleCourseClick(course)}
-              >
-                {/* Controles admin do curso */}
-                {adminModeEnabled && (
-                  <AdminEditControls 
-                    type="course" 
-                    course={course}
-                    onSave={handleSaveEdit}
-                  />
-                )}
-
-                <div className="relative h-48 sm:h-56 md:h-64">
-                  <img 
-                    src={course.thumbnail_url} 
-                    alt={course.title}
-                    className="w-full h-full object-cover rounded-t-lg"
-                  />
-                  {!adminModeEnabled && (
-                    <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-all duration-300 flex items-center justify-center">
-                      <Button 
-                        size="icon" 
-                        className="opacity-0 group-hover:opacity-100 transition-opacity duration-300 bg-white text-black hover:bg-white/90"
-                      >
-                        <Play className="h-5 w-5 sm:h-6 w-5 sm:w-6" />
-                      </Button>
-                    </div>
-                  )}
-                </div>
-
-              </Card>
-            ))}
+          {/* Seções por Curso: título do curso + grid de módulos (estilo Netflix) */}
+          <div className="space-y-8">
+            {dbCourses.map((course) => {
+              const courseModules = dbModules.filter((m) => m.course_id === course.id);
+              return (
+                <section key={course.id} className="pt-4 border-t border-gray-800">
+                  <div className="flex items-center justify-between mb-3 sm:mb-4">
+                    <h3 className="text-lg sm:text-xl font-semibold">{course.title}</h3>
+                    {adminModeEnabled && (
+                      <Badge className="bg-blue-600">Curso</Badge>
+                    )}
+                  </div>
+                  {/* Sempre padrão Netflix: cards grandes com capa do curso (clicando abre módulos/aulas) */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-3 sm:gap-4 md:gap-6">
+                    <Card 
+                      key={course.id} 
+                      className="w-full max-w-sm mx-auto sm:max-w-none h-auto sm:h-[400px] md:h-[450px] lg:h-[480px] bg-gray-900 border-gray-700 cursor-pointer hover:scale-105 transition-all duration-300 group relative"
+                      onClick={() => handleCourseClick(course)}
+                    >
+                      {adminModeEnabled && (
+                        <AdminEditControls 
+                          type="course" 
+                          course={course}
+                          onSave={handleSaveEdit}
+                        />
+                      )}
+                      <div className="relative h-48 sm:h-56 md:h-64">
+                        <img 
+                          src={course.thumbnail_url || '/placeholder.svg'} 
+                          alt={course.title}
+                          className="w-full h-full object-cover rounded-t-lg"
+                        />
+                        {!adminModeEnabled && (
+                          <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-all duration-300 flex items-center justify-center">
+                            <Button size="icon" className="opacity-0 group-hover:opacity-100 transition-opacity duration-300 bg-white text-black hover:bg-white/90">
+                              <Play className="h-5 w-5 sm:h-6 w-5 sm:w-6" />
+                            </Button>
+                          </div>
+                        )}
+                      </div>
+                    </Card>
+                  </div>
+                </section>
+              );
+            })}
           </div>
         </div>
       </div>
@@ -574,7 +710,7 @@ const CoursePlatformNetflix = ({ user }: CoursePlatformNetflixProps) => {
             <div className="flex-1">
               <div className="relative w-full aspect-video rounded-lg overflow-hidden bg-gray-900 shadow-2xl">
                 <iframe
-                  src={`https://www.youtube.com/embed/dQw4w9WgXcQ?autoplay=1`}
+                  src={getVideoEmbedUrl(selectedLesson.video_url)}
                   className="w-full h-full border-0"
                   title={selectedLesson.title}
                   loading="lazy"

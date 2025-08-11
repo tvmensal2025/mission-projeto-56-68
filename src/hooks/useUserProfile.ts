@@ -47,9 +47,9 @@ export const useUserProfile = (user: User | null) => {
       // Buscar da tabela profiles unificada
       const { data, error } = await supabase
         .from('profiles')
-        .select('*')
+        .select('user_id, full_name, email, phone, birth_date, city, state, avatar_url, bio, goals, achievements')
         .eq('user_id', user.id)
-        .single();
+        .maybeSingle();
 
       if (data) {
         // Usar dados da tabela profiles
@@ -81,11 +81,18 @@ export const useUserProfile = (user: User | null) => {
         });
       }
 
-      if (error && error.code !== 'PGRST116') {
+      if (error && error.code && error.code !== 'PGRST116') {
         console.error('Erro ao carregar perfil:', error);
       }
     } catch (error) {
-      console.error('Erro ao carregar perfil:', error);
+      // Rede off/ERR_CONNECTION_RESET: não quebrar a página
+      console.warn('Falha de rede ao carregar perfil. Usando dados locais.', error);
+      setProfileData(prev => ({
+        ...prev,
+        fullName: user.user_metadata?.full_name || prev.fullName,
+        email: user.email || prev.email,
+        avatarUrl: user.user_metadata?.avatar_url || prev.avatarUrl,
+      }));
     } finally {
       setLoading(false);
     }

@@ -1,8 +1,10 @@
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const openAIApiKey = Deno.env.get('OPENAI_API_KEY');
 const geminiApiKey = Deno.env.get('GOOGLE_AI_API_KEY');
+const ollamaBaseUrl = Deno.env.get('OLLAMA_BASE_URL') || 'http://ollama:11434';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -10,7 +12,7 @@ const corsHeaders = {
 };
 
 interface ChatRequest {
-  service?: 'openai' | 'gemini';
+  service?: 'openai' | 'gemini' | 'ollama';
   messages?: Array<{
     role: 'system' | 'user' | 'assistant';
     content: string;
@@ -19,6 +21,7 @@ interface ChatRequest {
   model?: string;
   temperature?: number;
   max_tokens?: number;
+  functionality?: string; // opcional: usar configuração do DB
 }
 
 const callOpenAI = async (messages: any[], model: string, temperature: number, max_tokens: number) => {
@@ -79,6 +82,53 @@ const callGemini = async (prompt: string, model: string, temperature: number, ma
   };
 };
 
+// Ollama (local) - chama o endpoint de chat do Ollama
+const callOllama = async (
+  messages: any[] | undefined,
+  prompt: string | undefined,
+  model: string,
+  temperature: number,
+  max_tokens: number
+) => {
+  const url = `${ollamaBaseUrl.replace(/\/$/, '')}/api/chat`;
+
+  // Converter prompt em mensagens caso necessário
+  const chatMessages = messages && messages.length > 0
+    ? messages
+    : [{ role: 'user', content: prompt || '' }];
+
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model,
+      messages: chatMessages,
+      options: {
+        temperature,
+        num_predict: max_tokens,
+      },
+      stream: false,
+    }),
+  });
+
+  if (!response.ok) {
+    const errorData = await response.text();
+    throw new Error(`Ollama API error: ${response.status} - ${errorData}`);
+  }
+
+  const data = await response.json();
+
+  // Estruturas possíveis: { message: { content } } ou { response }
+  const content = data?.message?.content || data?.response || 'Erro na resposta Ollama';
+
+  return {
+    content,
+    // Ollama não retorna tokens; aproximar por max_tokens solicitado
+    usage: { total_tokens: max_tokens },
+    model,
+  };
+};
+
 serve(async (req) => {
   // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
@@ -86,20 +136,59 @@ serve(async (req) => {
   }
 
   try {
-    const { 
+    let { 
       service = 'openai', 
       messages, 
       prompt, 
       model = 'gpt-4.1-2025-04-14', 
       temperature = 0.7, 
-      max_tokens = 1000 
+      max_tokens = 1000,
+      functionality
     }: ChatRequest = await req.json();
+
+    // Se functionality informada, buscar configs no DB e sobrescrever parâmetros
+    if (functionality) {
+      try {
+        const supabaseUrl = Deno.env.get('SUPABASE_URL');
+        const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+        if (supabaseUrl && supabaseKey) {
+          const sb = createClient(supabaseUrl, supabaseKey);
+          const { data: cfg, error: cfgErr } = await sb
+            .from('ai_configurations')
+            .select('service, model, max_tokens, temperature, system_prompt, level, preset_level, is_enabled')
+            .eq('functionality', functionality)
+            .single();
+          if (!cfgErr && cfg && cfg.is_enabled !== false) {
+            service = (cfg.service || service) as typeof service;
+            model = cfg.model || model;
+            max_tokens = cfg.max_tokens ?? max_tokens;
+            temperature = cfg.temperature ?? temperature;
+            // Injetar system_prompt se existir e ainda não houver mensagem de sistema
+            const hasSystem = Array.isArray(messages) && messages.some(m => m.role === 'system');
+            if (cfg.system_prompt && !hasSystem) {
+              messages = [
+                { role: 'system' as const, content: cfg.system_prompt },
+                ...(messages || (prompt ? [{ role: 'user' as const, content: prompt }] : []))
+              ];
+              prompt = undefined; // já convertido para messages
+            }
+          }
+        }
+      } catch (err) {
+        console.warn('Falha ao carregar configuração de IA para', functionality, err);
+      }
+    }
 
     console.log(`Processando ${service} - Model: ${model}`);
 
     let result: any;
 
-    if (service === 'gemini') {
+    if (service === 'ollama') {
+      if (!ollamaBaseUrl) {
+        throw new Error('OLLAMA_BASE_URL não está configurada');
+      }
+      result = await callOllama(messages, prompt, model, temperature, max_tokens);
+    } else if (service === 'gemini') {
       if (!geminiApiKey) {
         throw new Error('GOOGLE_AI_API_KEY não está configurada');
       }
@@ -119,6 +208,24 @@ serve(async (req) => {
     }
 
     console.log(`Resposta ${service} recebida - Tokens: ${result.usage?.total_tokens || 'N/A'}`);
+
+    // Registrar log básico se possível
+    try {
+      const supabaseUrl = Deno.env.get('SUPABASE_URL');
+      const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+      if (supabaseUrl && supabaseKey) {
+        const sb = createClient(supabaseUrl, supabaseKey);
+        await sb.from('ai_system_logs').insert({
+          event_type: 'chat_request',
+          functionality: functionality || 'generic',
+          level: 'info',
+          description: `Provider=${service} Model=${model}`,
+          config_snapshot: { service, model, temperature, max_tokens },
+          metadata: { usage: result?.usage, has_messages: !!messages, has_prompt: !!prompt },
+          timestamp: new Date().toISOString()
+        });
+      }
+    } catch (_) {}
 
     return new Response(JSON.stringify(result), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },

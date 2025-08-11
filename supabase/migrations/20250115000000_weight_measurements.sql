@@ -1,9 +1,10 @@
 -- Tabela para armazenar medições de peso e circunferência
+-- Unificar schema de weight_measurements (idempotente; garantir colunas superset)
 CREATE TABLE IF NOT EXISTS weight_measurements (
     id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
     user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
     peso_kg DECIMAL(5,2) NOT NULL,
-    circunferencia_abdominal_cm INTEGER NOT NULL,
+    circunferencia_abdominal_cm DECIMAL(5,2) NOT NULL,
     measurement_date DATE NOT NULL DEFAULT CURRENT_DATE,
     measurement_time TIME DEFAULT CURRENT_TIME,
     measurement_type TEXT CHECK (measurement_type IN ('balanca', 'manual')) DEFAULT 'manual',
@@ -16,7 +17,7 @@ CREATE TABLE IF NOT EXISTS weight_measurements (
     gordura_corporal_percent DECIMAL(4,1),
     massa_muscular_kg DECIMAL(5,2),
     massa_magra_kg DECIMAL(5,2),
-    agua_corporal_percent DECIMAL(4,1),
+    agua_corporal_percent DECIMAL(4,2),
     agua_corporal_litros DECIMAL(4,1),
     massa_ossea_kg DECIMAL(4,2),
     metabolismo_basal_kcal INTEGER,

@@ -452,7 +452,7 @@ async function generateDrVitaFeedback(supabase: any, userName: string, metrics: 
       }
     };
 
-    const prompt = `
+    let prompt = `
     Você é o Dr. Vita, um médico especialista em análise corporal e metabolismo. Analise os dados biomédicos completos do paciente ${userName} e forneça um feedback médico detalhado e personalizado em HTML.
 
     DADOS PARA ANÁLISE:
@@ -482,6 +482,12 @@ async function generateDrVitaFeedback(supabase: any, userName: string, metrics: 
 
     Retorne apenas o conteúdo HTML sem tags <html> ou <body>.
     `;
+    try {
+      const cfg = await getAIConfig(supabase, 'whatsapp_reports');
+      if ((cfg as any)?.system_prompt) {
+        prompt = (cfg as any).system_prompt as string;
+      }
+    } catch (_) {}
 
     let analysis = '';
 

@@ -164,3 +164,7 @@ echo "✅ Tudo pronto para automatizar o relatório semanal!"
 
 
 
+
+
+
+

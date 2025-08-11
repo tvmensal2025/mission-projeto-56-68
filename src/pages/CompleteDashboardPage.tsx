@@ -26,7 +26,8 @@ import DesafiosSection from '@/components/dashboard/DesafiosSection';
 import HealthFeedPage from '@/pages/HealthFeedPage';
 import PaymentPlans from '@/components/PaymentPlans';
 import UserDrVitalPage from '@/pages/UserDrVitalPage';
-import SofiaNutricionalPage from '@/pages/SofiaNutricionalPage';
+// Import correto da página Sofia (export: SofiaNutricionalPage)
+import { SofiaNutricionalPage } from '@/pages/SofiaNutricionalPage';
 import { UserProfile } from '@/components/UserProfile';
 import DebugDataVerification from '@/components/DebugDataVerification';
 import MyProgress from '@/components/MyProgress';
@@ -125,7 +126,6 @@ const CompleteDashboardPage = () => {
     { id: 'comunidade', icon: Users, label: 'Comunidade', color: 'text-blue-500' },
     { id: 'challenges', icon: Award, label: 'Desafios Individuais', color: 'text-orange-500' },
     { id: 'saboteur-test', icon: Settings, label: 'Teste de Sabotadores', color: 'text-gray-500' },
-    // Novo item: acima do Dr. Vital
     { id: 'sofia-nutricional', icon: Utensils, label: 'Sofia Nutricional', color: 'text-emerald-600' },
     { id: 'dr-vital', icon: Stethoscope, label: 'Dr. Vital', color: 'text-blue-600' },
     { id: 'subscriptions', icon: CreditCard, label: 'Assinaturas', color: 'text-purple-600' },
@@ -138,7 +138,7 @@ const CompleteDashboardPage = () => {
       case 'missions':
         return <DailyMissions user={user} />;
       case 'courses':
-        return <CoursePlatformNetflix />;
+        return <CoursePlatformNetflix user={user} />;
       case 'progress':
         return <MyProgress />;
       case 'saboteur-test':

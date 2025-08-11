@@ -45,18 +45,23 @@ CREATE INDEX IF NOT EXISTS idx_user_sessions_status ON user_sessions(status);
 ALTER TABLE sessions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE user_sessions ENABLE ROW LEVEL SECURITY;
 
--- Políticas para sessions
-CREATE POLICY "Users can view sessions" ON sessions
+-- Políticas para sessions (somente admin pode criar/editar/excluir)
+DROP POLICY IF EXISTS "Users can view sessions" ON sessions;
+DROP POLICY IF EXISTS "Users can create sessions" ON sessions;
+DROP POLICY IF EXISTS "Users can update their own sessions" ON sessions;
+DROP POLICY IF EXISTS "Users can delete their own sessions" ON sessions;
+
+CREATE POLICY "Anyone can view sessions" ON sessions
   FOR SELECT USING (true);
 
-CREATE POLICY "Users can create sessions" ON sessions
-  FOR INSERT WITH CHECK (true);
+CREATE POLICY "Admin can insert sessions" ON sessions
+  FOR INSERT WITH CHECK (auth.jwt() ->> 'role' = 'admin');
 
-CREATE POLICY "Users can update their own sessions" ON sessions
-  FOR UPDATE USING (auth.uid() = created_by);
+CREATE POLICY "Admin can update sessions" ON sessions
+  FOR UPDATE USING (auth.jwt() ->> 'role' = 'admin');
 
-CREATE POLICY "Users can delete their own sessions" ON sessions
-  FOR DELETE USING (auth.uid() = created_by);
+CREATE POLICY "Admin can delete sessions" ON sessions
+  FOR DELETE USING (auth.jwt() ->> 'role' = 'admin');
 
 -- Políticas para user_sessions
 CREATE POLICY "Users can view their own sessions" ON user_sessions

@@ -14,15 +14,15 @@
       "type": "image/x-icon"
     },
     {
-      "src": "/placeholder.svg",
-      "type": "image/svg+xml",
+      "src": "/favicon.png",
       "sizes": "192x192",
+      "type": "image/png",
       "purpose": "any maskable"
     },
     {
-      "src": "/placeholder.svg", 
-      "type": "image/svg+xml",
+      "src": "/images/sofia.png",
       "sizes": "512x512",
+      "type": "image/png",
       "purpose": "any maskable"
     }
   ],

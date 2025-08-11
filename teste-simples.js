@@ -1,55 +1,54 @@
-// Teste simples do Sistema de Missão do Dia
-import http from 'http';
+// TESTE SIMPLES - Execute no console do navegador
+console.log('🚀 TESTE SIMPLES DO GOOGLE FIT');
 
-function testarAplicacao() {
-  console.log('🚀 Testando aplicação...');
-  
-  const options = {
-    hostname: 'localhost',
-    port: 8080,
-    path: '/',
-    method: 'GET'
-  };
-
-  const req = http.request(options, (res) => {
-    console.log(`✅ Status: ${res.statusCode}`);
-    
-    let data = '';
-    res.on('data', (chunk) => {
-      data += chunk;
-    });
-    
-    res.on('end', () => {
-      console.log('📄 Conteúdo da página carregado');
-      
-      // Verificar se há elementos da Missão do Dia
-      if (data.includes('Missão do Dia')) {
-        console.log('✅ Sistema de Missão do Dia encontrado na página');
-      } else {
-        console.log('⚠️ Sistema de Missão do Dia não encontrado');
-      }
-      
-      if (data.includes('RITUAL DA MANHÃ')) {
-        console.log('✅ Seção RITUAL DA MANHÃ encontrada');
-      }
-      
-      if (data.includes('HÁBITOS DO DIA')) {
-        console.log('✅ Seção HÁBITOS DO DIA encontrada');
-      }
-      
-      if (data.includes('MENTE & EMOÇÕES')) {
-        console.log('✅ Seção MENTE & EMOÇÕES encontrada');
-      }
-      
-      console.log('🎉 Teste concluído!');
-    });
-  });
-
-  req.on('error', (e) => {
-    console.error(`❌ Erro: ${e.message}`);
-  });
-
-  req.end();
+// 1. Testar Supabase
+console.log('\n1️⃣ Testando Supabase...');
+if (window.supabase) {
+  console.log('✅ Supabase disponível');
+} else {
+  console.log('❌ Supabase não disponível');
 }
 
-testarAplicacao(); 
+// 2. Testar autenticação
+console.log('\n2️⃣ Testando autenticação...');
+window.supabase.auth.getSession().then(({ data, error }) => {
+  if (error) {
+    console.log('❌ Erro na autenticação:', error.message);
+  } else if (data.session) {
+    console.log('✅ Usuário logado:', data.session.user.email);
+  } else {
+    console.log('❌ Usuário não logado');
+  }
+});
+
+// 3. Testar Edge Function
+console.log('\n3️⃣ Testando Edge Function...');
+window.supabase.functions.invoke('google-fit-token', {
+  body: { testSecrets: true }
+}).then(({ data, error }) => {
+  if (error) {
+    console.log('❌ Erro na Edge Function:', error.message);
+  } else {
+    console.log('✅ Edge Function funcionando:', data);
+  }
+});
+
+// 4. Testar tabelas
+console.log('\n4️⃣ Testando tabelas...');
+window.supabase.from('google_fit_tokens').select('*').limit(1).then(({ data, error }) => {
+  if (error) {
+    console.log('❌ Erro na tabela tokens:', error.message);
+  } else {
+    console.log('✅ Tabela tokens OK');
+  }
+});
+
+window.supabase.from('google_fit_data').select('*').limit(1).then(({ data, error }) => {
+  if (error) {
+    console.log('❌ Erro na tabela data:', error.message);
+  } else {
+    console.log('✅ Tabela data OK');
+  }
+});
+
+console.log('\n🎯 Teste iniciado! Verifique os resultados acima.'); 

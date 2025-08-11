@@ -213,7 +213,7 @@ export const QuizModal = ({ isOpen, onClose, onSubmit, lessons }: QuizModalProps
 
   return (
     <Dialog open={isOpen} onOpenChange={handleClose}>
-      <DialogContent className="bg-gray-900 border-gray-700 text-white max-w-4xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="w-[95vw] bg-gray-900 border-gray-700 text-white max-w-4xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-xl font-bold">
             <CheckCircle className="h-6 w-6 text-purple-500" />

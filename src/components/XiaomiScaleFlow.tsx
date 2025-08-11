@@ -91,6 +91,41 @@ export const XiaomiScaleFlow: React.FC = () => {
   const [isWeighing, setIsWeighing] = useState(false);
   const { toast } = useToast();
 
+  // Google Fit connection state for one-time connect
+  const [googleFitConnected, setGoogleFitConnected] = useState(false);
+  const [checkingGoogleFit, setCheckingGoogleFit] = useState(false);
+
+  const checkGoogleFitConnection = async () => {
+    try {
+      setCheckingGoogleFit(true);
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        setGoogleFitConnected(false);
+        return;
+      }
+      const { data: tokenRow } = await supabase
+        .from('google_fit_tokens')
+        .select('expires_at')
+        .eq('user_id', user.id)
+        .maybeSingle();
+      if (!tokenRow) {
+        setGoogleFitConnected(false);
+        return;
+      }
+      const expired = new Date(tokenRow.expires_at) < new Date();
+      setGoogleFitConnected(!expired);
+    } catch {
+      setGoogleFitConnected(false);
+    } finally {
+      setCheckingGoogleFit(false);
+    }
+  };
+
+  useEffect(() => {
+    // always check once component mounts or dialog opens
+    checkGoogleFitConnection();
+  }, [isOpen]);
+
   // Verificar se Web Bluetooth API está disponível
   const isBluetoothSupported = () => {
     return 'bluetooth' in navigator;
@@ -520,13 +555,23 @@ export const XiaomiScaleFlow: React.FC = () => {
               </Button>
               
               <Button 
-                onClick={() => window.location.href = '/google-fit-oauth'}
+                onClick={() => { if (!googleFitConnected) window.location.href = '/google-fit-oauth' }}
                 size="lg"
                 variant="outline"
-                className="w-full border-2 border-green-500/20 hover:bg-green-500/5 font-semibold py-4 px-8 text-lg text-green-600 hover:text-green-700"
+                disabled={googleFitConnected || checkingGoogleFit}
+                className={`w-full border-2 py-4 px-8 text-lg ${googleFitConnected ? 'border-green-500/30 text-green-600' : 'border-green-500/20 text-green-600 hover:text-green-700 hover:bg-green-500/5'}`}
               >
-                <Activity className="mr-2 h-5 w-5" />
-                <span>CONECTAR GOOGLE FIT</span>
+                {googleFitConnected ? (
+                  <>
+                    <CheckCircle className="mr-2 h-5 w-5" />
+                    <span>GOOGLE FIT CONECTADO</span>
+                  </>
+                ) : (
+                  <>
+                    <Activity className="mr-2 h-5 w-5" />
+                    <span>CONECTAR GOOGLE FIT</span>
+                  </>
+                )}
               </Button>
             </div>
           </div>
@@ -1015,7 +1060,7 @@ export const XiaomiScaleFlow: React.FC = () => {
         </Button>
       </DialogTrigger>
       
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="w-[95vw] max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Scale className="h-5 w-5" />

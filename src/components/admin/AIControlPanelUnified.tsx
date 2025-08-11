@@ -68,7 +68,7 @@ interface AIConfig {
   id?: string;
   functionality: string;
   personality: 'drvital' | 'sofia';
-  service: 'openai' | 'gemini' | 'sofia';
+  service: 'openai' | 'gemini' | 'ollama';
   model: string;
   max_tokens: number;
   temperature: number;
@@ -117,6 +117,19 @@ export function AIControlPanelUnified() {
   const [uploadedFiles, setUploadedFiles] = useState<File[]>([]);
   const [isAdvancedModalOpen, setIsAdvancedModalOpen] = useState(false);
   const [selectedAdvancedConfig, setSelectedAdvancedConfig] = useState<AIConfig | null>(null);
+  // Modo enxuto: esconder Documentos e Controle Avançado por ora
+  const showDocuments = false;
+  const showAdvanced = false;
+  // Preset dialog state
+  const [isPresetDialogOpen, setIsPresetDialogOpen] = useState(false);
+  const [presetService, setPresetService] = useState<'openai' | 'gemini' | 'ollama'>('openai');
+  const [presetModel, setPresetModel] = useState<string>('gpt-4.1-2025-04-14');
+  const [presetLevel, setPresetLevel] = useState<'maximo' | 'meio' | 'minimo'>('meio');
+  const [presetActivate, setPresetActivate] = useState<boolean>(true);
+  const [isApplyingPreset, setIsApplyingPreset] = useState<boolean>(false);
+  const [selectedGroups, setSelectedGroups] = useState<string[]>(['reports', 'chat_analysis', 'missions']);
+  const [presetPreview, setPresetPreview] = useState<{targets: number; newDailyCost: number; currentDailyCost: number; delta: number; tokensPerRequest: number}>({targets: 0, newDailyCost: 0, currentDailyCost: 0, delta: 0, tokensPerRequest: 0});
+  const [selectedFunctionTitle, setSelectedFunctionTitle] = useState<string>('');
   
   // Funcionalidades disponíveis
   const functionalities = [
@@ -225,10 +238,12 @@ export function AIControlPanelUnified() {
       { value: 'gemini-1.5-flash', label: 'Gemini 1.5 Flash', cost: 0.0007 },
       { value: 'gemini-pro', label: 'Gemini Pro', cost: 0.0025 }
     ],
-    sofia: [
-      { value: 'sofia-chat', label: 'Sofia Chat (Interno)', cost: 0.001 }
+    ollama: [
+      { value: 'llama3.1:8b-instruct-q4_0', label: 'Ollama - llama3.1:8b-instruct-q4_0', cost: 0.0 },
+      { value: 'qwen2.5:7b-instruct-q4_0', label: 'Ollama - qwen2.5:7b-instruct-q4_0', cost: 0.0 },
+      { value: 'deepseek-r1:7b-qwen-distill-q4_K_M', label: 'Ollama - deepseek-r1:7b-qwen-distill-q4_K_M', cost: 0.0 }
     ]
-  };
+  } as const;
 
   // Configurações por nível
   const levelConfigs = {
@@ -264,24 +279,34 @@ export function AIControlPanelUnified() {
     loadDocuments();
   }, []);
 
-  // Sincronizar configuração selecionada quando modal é aberto
+  // Preencher valores padrão apenas quando necessário, evitando loop
   useEffect(() => {
-    if (selectedAdvancedConfig) {
-      // Garantir que a configuração tenha valores padrão se necessário
-      const configWithDefaults = {
-        ...selectedAdvancedConfig,
-        personality: selectedAdvancedConfig.personality || 'drvital',
-        level: selectedAdvancedConfig.level || 'meio',
-        max_tokens: selectedAdvancedConfig.max_tokens || 4096,
-        temperature: selectedAdvancedConfig.temperature || 0.8,
-        service: selectedAdvancedConfig.service || 'openai',
-        model: selectedAdvancedConfig.model || 'gpt-4',
-        cost_per_request: selectedAdvancedConfig.cost_per_request || 0.01,
-        priority: selectedAdvancedConfig.priority || 1
-      };
-      setSelectedAdvancedConfig(configWithDefaults);
-    }
-  }, [selectedAdvancedConfig]);
+    if (!selectedAdvancedConfig) return;
+    const cfg = selectedAdvancedConfig;
+    const needsDefaults =
+      !cfg.personality ||
+      !cfg.level ||
+      !cfg.max_tokens ||
+      cfg.temperature === undefined ||
+      !cfg.service ||
+      !cfg.model ||
+      cfg.cost_per_request === undefined ||
+      cfg.priority === undefined;
+    if (!needsDefaults) return;
+
+    const configWithDefaults = {
+      ...cfg,
+      personality: cfg.personality || 'drvital',
+      level: (cfg.level as any) || 'meio',
+      max_tokens: cfg.max_tokens || 4096,
+      temperature: (cfg.temperature as any) ?? 0.8,
+      service: (cfg.service as any) || 'openai',
+      model: cfg.model || 'gpt-4.1-2025-04-14',
+      cost_per_request: cfg.cost_per_request ?? 0.01,
+      priority: cfg.priority ?? 1,
+    } as AIConfig;
+    setSelectedAdvancedConfig(configWithDefaults);
+  }, [isAdvancedModalOpen]);
 
   const loadConfigurations = async () => {
     try {
@@ -301,24 +326,75 @@ export function AIControlPanelUnified() {
       console.log('Raw data from database:', data);
 
       // Mapear dados para o formato correto com valores reais do banco
-      const mappedConfigs = (data || []).map(config => ({
+      const mappedConfigs = (data || []).map((config: any) => ({
         id: config.id,
         functionality: config.functionality,
-        personality: 'drvital' as 'drvital' | 'sofia', // Campo não existe no schema
-        service: config.service as 'openai' | 'gemini' | 'sofia',
-        model: config.model || 'gpt-4',
-        max_tokens: config.max_tokens || 4096,
-        temperature: config.temperature || 0.8,
-        is_enabled: config.is_enabled || false,
-        level: config.level as 'maximo' | 'meio' | 'minimo', // Usar level
+        personality: (config.personality || 'drvital') as 'drvital' | 'sofia',
+        service: (config.service || 'openai') as 'openai' | 'gemini' | 'ollama',
+        model: config.model || 'gpt-4.1-2025-04-14',
+        max_tokens: config.max_tokens ?? 4096,
+        temperature: config.temperature ?? 0.8,
+        is_enabled: (config.is_enabled ?? config.is_active ?? false) as boolean,
+        level: (config.level || config.preset_level || 'meio') as 'maximo' | 'meio' | 'minimo',
         system_prompt: config.system_prompt || '',
-        cost_per_request: 0.01, // Campo não existe no schema
-        priority: 1 // Campo não existe no schema
+        cost_per_request: config.cost_per_request ?? 0.01,
+        priority: config.priority ?? 1
       }));
 
       console.log('Mapped configurations:', mappedConfigs);
       setConfigs(mappedConfigs);
       calculateTotalCost(mappedConfigs);
+
+      // Inicializar configurações faltantes com padrão consistente (não ativa por padrão)
+      const existingKeys = new Set(mappedConfigs.map((c) => c.functionality));
+      const missingFuncs = functionalities.filter((f) => !existingKeys.has(f.key));
+      if (missingFuncs.length > 0) {
+        const defaultTokens = levelConfigs['meio'].tokens;
+        const defaultTemp = levelConfigs['meio'].temperature;
+
+        for (const func of missingFuncs) {
+          const defaultCfg: AIConfig = {
+            functionality: func.key,
+            personality: func.default_personality as 'drvital' | 'sofia',
+            service: 'gemini',
+            model: 'gemini-1.5-flash',
+            max_tokens: defaultTokens,
+            temperature: defaultTemp,
+            is_enabled: false,
+            level: 'meio',
+            system_prompt: ''
+          } as AIConfig;
+          try {
+            await saveConfiguration(defaultCfg);
+          } catch (e) {
+            console.error('Falha ao inicializar config para', func.key, e);
+          }
+        }
+
+        // Recarregar para refletir todas as configs
+        const refreshed = await supabase
+          .from('ai_configurations')
+          .select('*')
+          .order('functionality');
+        if (!refreshed.error) {
+          const mapped = (refreshed.data || []).map((config: any) => ({
+            id: config.id,
+            functionality: config.functionality,
+            personality: (config.personality || 'drvital') as 'drvital' | 'sofia',
+            service: (config.service || 'openai') as 'openai' | 'gemini' | 'ollama',
+            model: config.model || 'gpt-4.1-2025-04-14',
+            max_tokens: config.max_tokens ?? 4096,
+            temperature: config.temperature ?? 0.8,
+            is_enabled: (config.is_enabled ?? config.is_active ?? false) as boolean,
+            level: (config.level || config.preset_level || 'meio') as 'maximo' | 'meio' | 'minimo',
+            system_prompt: config.system_prompt || '',
+            cost_per_request: config.cost_per_request ?? 0.01,
+            priority: config.priority ?? 1
+          }));
+          setConfigs(mapped);
+          calculateTotalCost(mapped);
+        }
+      }
     } catch (error) {
       toastHook({
         title: 'Erro',
@@ -332,15 +408,13 @@ export function AIControlPanelUnified() {
 
   const loadDocuments = async () => {
     try {
-      // Temporariamente comentado até a migração ser aplicada manualmente
-      // const { data, error } = await supabase
-      //   .from('ai_documents')
-      //   .select('*')
-      //   .order('uploaded_at', { ascending: false });
+      const { data, error } = await supabase
+        .from('ai_documents')
+        .select('*')
+        .order('uploaded_at', { ascending: false });
 
-      // if (error) throw error;
-      // setDocuments(data || []);
-      setDocuments([]); // Array vazio temporariamente
+      if (error) throw error;
+      setDocuments(data || []);
     } catch (error) {
       console.error('Erro ao carregar documentos:', error);
     }
@@ -359,44 +433,227 @@ export function AIControlPanelUnified() {
     setTotalCost(cost);
   };
 
+  // Grupos de funcionalidades para aplicação seletiva
+  const functionGroups: Record<string, string[]> = {
+    reports: ['weekly_report', 'monthly_report', 'whatsapp_reports', 'email_reports'],
+    chat_analysis: ['daily_chat', 'medical_analysis', 'preventive_analysis', 'food_analysis'],
+    missions: ['daily_missions']
+  };
+
+  const getTargetFunctionalities = (): string[] => {
+    if (!selectedGroups || selectedGroups.length === 0) {
+      return functionalities.map(f => f.key);
+    }
+    const set = new Set<string>();
+    selectedGroups.forEach(g => (functionGroups[g] || []).forEach(f => set.add(f)));
+    return Array.from(set);
+  };
+
+  // Cálculo de custo estimado por dia para preview
+  const computeEstimatedDailyCost = (service: 'openai' | 'gemini' | 'ollama', model: string, tokens: number, active: boolean, count: number): number => {
+    if (!active || count <= 0) return 0;
+    const info = models[service as keyof typeof models]?.find((m) => m.value === model);
+    const costPerToken = info?.cost ?? 0.01; // ollama pode ser 0.0
+    const dailyUsage = tokens * 10; // mesma heurística do painel
+    return (costPerToken * dailyUsage / 1000) * count;
+  };
+
+  // Atualiza preview quando parâmetros mudarem
+  useEffect(() => {
+    const targets = getTargetFunctionalities();
+    const tokens = levelConfigs[presetLevel].tokens;
+    const newCost = computeEstimatedDailyCost(presetService, presetModel, tokens, presetActivate, targets.length);
+    // custo atual para o mesmo conjunto de funções
+    const current = configs
+      .filter(c => targets.includes(c.functionality) && c.is_enabled)
+      .reduce((total, c) => {
+        const info = models[c.service as keyof typeof models]?.find(m => m.value === c.model);
+        const cpt = info?.cost ?? 0.01;
+        const dailyUsage = (c.max_tokens ?? 1000) * 10;
+        return total + (cpt * dailyUsage / 1000);
+      }, 0);
+    setPresetPreview({ targets: targets.length, newDailyCost: newCost, currentDailyCost: current, delta: newCost - current, tokensPerRequest: tokens });
+  }, [presetService, presetModel, presetLevel, presetActivate, selectedGroups, configs]);
+
+  const openPresetDialog = () => {
+    // Defaults
+    setPresetService('openai');
+    setPresetLevel('meio');
+    setPresetModel(models.openai[0]?.value || 'gpt-4.1-2025-04-14');
+    setPresetActivate(true);
+    setIsPresetDialogOpen(true);
+  };
+
+  const applyPresetToAll = async () => {
+    try {
+      setIsApplyingPreset(true);
+      const levelInfo = levelConfigs[presetLevel];
+      const allFunctions = getTargetFunctionalities();
+      const failed: string[] = [];
+      const succeeded: string[] = [];
+
+      for (const funcKey of allFunctions) {
+        const existing = configs.find(c => c.functionality === funcKey);
+        const personality = functionalities.find(f => f.key === funcKey)?.default_personality as 'drvital' | 'sofia';
+        const base: AIConfig = existing || {
+          functionality: funcKey,
+          personality: personality || 'drvital',
+          service: presetService,
+          model: presetModel,
+          max_tokens: levelInfo.tokens,
+          temperature: levelInfo.temperature,
+          is_enabled: presetActivate,
+          level: presetLevel,
+          system_prompt: existing?.system_prompt || ''
+        } as AIConfig;
+
+        const updated: AIConfig = {
+          ...base,
+          personality: personality || base.personality,
+          service: presetService,
+          model: presetModel,
+          max_tokens: levelInfo.tokens,
+          temperature: levelInfo.temperature,
+          is_enabled: presetActivate,
+          level: presetLevel
+        };
+
+        try {
+          await saveConfiguration(updated);
+          succeeded.push(funcKey);
+        } catch (err) {
+          console.error('Erro ao aplicar preset para', funcKey, err);
+          failed.push(funcKey);
+        }
+      }
+
+      if (failed.length === 0) {
+        toast.success(`Preset aplicado com sucesso em ${succeeded.length} função(ões).`);
+      } else {
+        const failedList = failed.join(', ');
+        toast.warning(`Aplicado em ${succeeded.length}, falhou em ${failed.length}: ${failedList}`);
+      }
+      setIsPresetDialogOpen(false);
+      await loadConfigurations();
+    } catch (error) {
+      toast.error('Erro ao aplicar preset');
+    } finally {
+      setIsApplyingPreset(false);
+    }
+  };
+
   const saveConfiguration = async (config: AIConfig) => {
     try {
       setIsSaving(true);
-      
-      const updateData = {
+
+      // Verifica se já existe registro para a funcionalidade
+      const { data: existing, error: selectErr } = await supabase
+        .from('ai_configurations')
+        .select('id')
+        .eq('functionality', config.functionality)
+        .maybeSingle();
+
+      if (selectErr && selectErr.code && selectErr.code !== 'PGRST116') {
+        console.warn('Seleção de configuração falhou, seguindo mesmo assim:', selectErr);
+      }
+
+      const now = new Date().toISOString();
+      const payloadFull: any = {
         functionality: config.functionality,
-        personality: config.personality,
         service: config.service,
         model: config.model,
         max_tokens: config.max_tokens,
         temperature: config.temperature,
-        is_enabled: config.is_enabled,
-        level: config.level,
         system_prompt: config.system_prompt,
-        cost_per_request: config.cost_per_request,
+        // escrever nos dois nomes possíveis
+        is_enabled: config.is_enabled,
+        is_active: config.is_enabled,
+        level: config.level,
+        preset_level: config.level,
+        personality: config.personality,
         priority: config.priority,
-        updated_at: new Date().toISOString()
+        updated_at: now,
       };
 
-      const { error } = await supabase
-        .from('ai_configurations')
-        .upsert(updateData, {
-          onConflict: 'functionality'
-        });
+      const payloadMedium: any = {
+        functionality: config.functionality,
+        service: config.service,
+        model: config.model,
+        max_tokens: config.max_tokens,
+        temperature: config.temperature,
+        system_prompt: config.system_prompt,
+        is_enabled: config.is_enabled,
+        level: config.level,
+        updated_at: now,
+      };
 
-      if (error) {
-        console.error('Erro ao salvar:', error);
-        throw error;
+      const payloadMinimal: any = {
+        functionality: config.functionality,
+        service: config.service,
+        model: config.model,
+        max_tokens: config.max_tokens,
+        temperature: config.temperature,
+        updated_at: now,
+      };
+
+      const tryWrite = async (mode: 'update' | 'insert', payload: any) => {
+        if (mode === 'update') {
+          return await supabase.from('ai_configurations').update(payload).eq('functionality', config.functionality);
+        }
+        return await supabase.from('ai_configurations').insert(payload);
+      };
+
+      let writeError: any | null = null;
+
+      // 1) Tenta update se existir, senão insert, com payload completo
+      if (existing) {
+        ({ error: writeError } = await tryWrite('update', payloadFull));
+      } else {
+        ({ error: writeError } = await tryWrite('insert', payloadFull));
       }
 
-      // Atualizar o estado local imediatamente
-      setConfigs(prev => 
-        prev.map(c => 
-          c.functionality === config.functionality 
-            ? { ...c, ...updateData }
-            : c
-        )
-      );
+      // 2) Se erro por falta de coluna ou conflito único ausente, tentar payload médio
+      if (writeError) {
+        const message = (writeError.message || '').toLowerCase();
+        const needFallback =
+          message.includes('does not exist') ||
+          message.includes('no unique or exclusion constraint') ||
+          message.includes('duplicate key value') ||
+          message.includes('on conflict');
+
+        if (needFallback) {
+          if (existing) {
+            ({ error: writeError } = await tryWrite('update', payloadMedium));
+          } else {
+            ({ error: writeError } = await tryWrite('insert', payloadMedium));
+          }
+        }
+      }
+
+      // 3) Último fallback: payload mínimo
+      if (writeError) {
+        if (existing) {
+          ({ error: writeError } = await tryWrite('update', payloadMinimal));
+        } else {
+          ({ error: writeError } = await tryWrite('insert', payloadMinimal));
+        }
+      }
+
+      if (writeError) {
+        console.error('Erro ao salvar (após fallbacks):', writeError);
+        throw writeError;
+      }
+
+      // Atualizar estado local
+      setConfigs((prev) => {
+        const exists = prev.some((c) => c.functionality === config.functionality);
+        const updatedConfig: AIConfig = {
+          ...(prev.find((c) => c.functionality === config.functionality) || ({} as AIConfig)),
+          ...config,
+        };
+        if (exists) return prev.map((c) => (c.functionality === config.functionality ? updatedConfig : c));
+        return [...prev, updatedConfig];
+      });
 
       toast.success('Configuração salva com sucesso!');
     } catch (error) {
@@ -458,25 +715,23 @@ export function AIControlPanelUnified() {
 
     try {
       setIsSaving(true);
-      
-      // Temporariamente comentado até a migração ser aplicada
-      // for (const file of uploadedFiles) {
-      //   const content = await file.text();
-      //   
-      //   const { error } = await supabase
-      //     .from('ai_documents')
-      //     .insert({
-      //       name: file.name,
-      //       type: 'guide', // Pode ser configurável
-      //       content: content,
-      //       functionality: selectedFunction || 'general',
-      //       uploaded_at: new Date().toISOString()
-      //   });
 
-      //   if (error) throw error;
-      // }
+      for (const file of uploadedFiles) {
+        const content = await file.text();
+        const { error } = await supabase
+          .from('ai_documents')
+          .insert({
+            name: file.name,
+            type: 'guide',
+            content,
+            functionality: selectedFunction || 'general',
+            uploaded_at: new Date().toISOString()
+          });
 
-      // await loadDocuments();
+        if (error) throw error;
+      }
+
+      await loadDocuments();
       setUploadedFiles([]);
       toast.success(`${uploadedFiles.length} documento(s) enviado(s) com sucesso!`);
     } catch (error) {
@@ -567,6 +822,120 @@ export function AIControlPanelUnified() {
               <PlayCircle className="h-4 w-4" />
               {testingLoading ? 'Testando...' : 'Teste Completo'}
             </Button>
+            <Dialog open={isPresetDialogOpen} onOpenChange={setIsPresetDialogOpen}>
+              <DialogTrigger asChild>
+                <Button variant="outline" onClick={openPresetDialog}>
+                  <RotateCcw className="h-4 w-4 mr-2" />
+                  Aplicar Preset a Todos
+                </Button>
+              </DialogTrigger>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>Aplicar Preset para Todas as Funções</DialogTitle>
+                  <DialogDescription>Escolha provedor, modelo e nível. Isso atualizará todas as funções.</DialogDescription>
+                </DialogHeader>
+                <div className="grid gap-4 py-2">
+                  <div className="flex flex-wrap gap-2">
+                    <Button variant="outline" size="sm" onClick={() => { setPresetService('openai'); setPresetActivate(true); const first=models.openai[0]?.value; if(first) setPresetModel(first); }}>Ativar OpenAI</Button>
+                    <Button variant="outline" size="sm" onClick={() => { setPresetService('gemini'); setPresetActivate(true); const first=models.gemini[0]?.value; if(first) setPresetModel(first); }}>Ativar Gemini</Button>
+                    <Button variant="outline" size="sm" onClick={() => { setPresetService('ollama'); setPresetActivate(true); const first=models.ollama[0]?.value; if(first) setPresetModel(first); }}>Ativar Ollama</Button>
+                    <Button variant="outline" size="sm" onClick={() => { setPresetActivate(true); }}>Ativar Todas</Button>
+                    <Button variant="destructive" size="sm" onClick={() => { setPresetActivate(false); }}>Desativar Todas</Button>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <Label>Serviço</Label>
+                      <Select value={presetService} onValueChange={(v) => {
+                        setPresetService(v as 'openai' | 'gemini' | 'ollama');
+                        const first = models[v as keyof typeof models]?.[0]?.value;
+                        if (first) setPresetModel(first);
+                      }}>
+                        <SelectTrigger><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="openai">OpenAI</SelectItem>
+                          <SelectItem value="gemini">Google Gemini</SelectItem>
+                          <SelectItem value="ollama">Ollama (Local)</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div>
+                      <Label>Modelo</Label>
+                      <Select value={presetModel} onValueChange={setPresetModel}>
+                        <SelectTrigger><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          {models[presetService as keyof typeof models]?.map((m) => (
+                            <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <Label>Nível</Label>
+                      <Select value={presetLevel} onValueChange={(v) => setPresetLevel(v as 'maximo' | 'meio' | 'minimo')}>
+                        <SelectTrigger><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="maximo">Máximo</SelectItem>
+                          <SelectItem value="meio">Meio</SelectItem>
+                          <SelectItem value="minimo">Mínimo</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="flex items-end">
+                      <div className="flex items-center gap-2">
+                        <Switch checked={presetActivate} onCheckedChange={setPresetActivate} />
+                        <span>Ativar todas</span>
+                      </div>
+                    </div>
+                  </div>
+                  {/* Seleção de grupos */}
+                  <div className="space-y-2">
+                    <Label>Aplicar em</Label>
+                    <div className="flex flex-wrap gap-2 text-sm">
+                      {[
+                        { id: 'reports', label: 'Relatórios' },
+                        { id: 'chat_analysis', label: 'Chat/Análises' },
+                        { id: 'missions', label: 'Missões' },
+                      ].map((g) => (
+                        <Button
+                          key={g.id}
+                          type="button"
+                          variant={selectedGroups.includes(g.id) ? 'default' : 'outline'}
+                          size="sm"
+                          onClick={() => {
+                            setSelectedGroups((prev) => (
+                              prev.includes(g.id) ? prev.filter((x) => x !== g.id) : [...prev, g.id]
+                            ));
+                          }}
+                        >
+                          {g.label}
+                        </Button>
+                      ))}
+                    </div>
+                    <p className="text-xs text-muted-foreground">Sem seleção = aplica em todas as funções.</p>
+                  </div>
+
+                  {/* Prévia de impacto */}
+                  <div className="rounded-md border p-3 bg-muted/50">
+                    <div className="text-sm font-medium mb-1">Prévia de Impacto</div>
+                    <div className="text-sm flex flex-wrap gap-4">
+                      <span>Alvo: {presetPreview.targets} função(ões)</span>
+                      <span>Tokens por request: {presetPreview.tokensPerRequest}</span>
+                      <span>Custo atual (dia): ${presetPreview.currentDailyCost.toFixed(2)}</span>
+                      <span>Novo custo (dia): ${presetPreview.newDailyCost.toFixed(2)}</span>
+                      <span>Variação: {presetPreview.delta >= 0 ? '+' : ''}${presetPreview.delta.toFixed(2)}/dia</span>
+                    </div>
+                  </div>
+                </div>
+                <DialogFooter>
+                  <Button variant="outline" onClick={() => setIsPresetDialogOpen(false)}>Cancelar</Button>
+                  <Button onClick={applyPresetToAll} disabled={isApplyingPreset}>
+                    {isApplyingPreset ? 'Aplicando...' : 'Aplicar a Todos'}
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
             <Button variant="outline" onClick={resetToDefaults} disabled={isSaving}>
               <RotateCcw className="h-4 w-4 mr-2" />
               Reset Padrão
@@ -580,12 +949,10 @@ export function AIControlPanelUnified() {
       </Card>
 
       <Tabs defaultValue="configurations" className="w-full">
-        <TabsList className="grid w-full grid-cols-5">
+        <TabsList className="grid w-full grid-cols-3">
           <TabsTrigger value="configurations">⚙️ Configurações</TabsTrigger>
-          <TabsTrigger value="documents">📚 Documentos</TabsTrigger>
           <TabsTrigger value="testing">🧪 Testes</TabsTrigger>
           <TabsTrigger value="monitoring">📊 Monitoramento</TabsTrigger>
-          <TabsTrigger value="advanced">👑 Controle Avançado</TabsTrigger>
         </TabsList>
 
         {/* Aba de Configurações */}
@@ -594,7 +961,7 @@ export function AIControlPanelUnified() {
             <Brain className="h-4 w-4" />
             <AlertDescription>
               <strong>Configuração por Função:</strong> Configure cada função com personalidade específica (DrVital/Sofia), 
-              nível de IA (Máximo/Meio/Mínimo) e serviço (OpenAI/Gemini/Sofia).
+              nível de IA (Máximo/Meio/Mínimo) e serviço (OpenAI/Gemini/Ollama).
             </AlertDescription>
           </Alert>
 
@@ -615,21 +982,23 @@ export function AIControlPanelUnified() {
                         </div>
                       </div>
                       <div className="flex items-center gap-2">
-                        <Switch
-                          checked={config?.is_enabled || false}
-                          onCheckedChange={(checked) => {
-                            if (config) {
-                              saveConfiguration({ ...config, is_enabled: checked });
-                            }
-                          }}
-                        />
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => config && testConfiguration(config)}
-                          disabled={isTesting}
-                        >
-                          <TestTube className="h-3 w-3" />
+                        <Button size="sm" variant="outline" onClick={() => {
+                          const defaultCfg: AIConfig = {
+                            functionality: func.key,
+                            personality: func.default_personality as 'drvital' | 'sofia',
+                            service: 'gemini',
+                            model: 'gemini-1.5-flash',
+                            max_tokens: levelConfigs['meio'].tokens,
+                            temperature: levelConfigs['meio'].temperature,
+                            is_enabled: config?.is_enabled ?? false,
+                            level: 'meio',
+                            system_prompt: ''
+                          } as AIConfig;
+                          setSelectedFunctionTitle(func.name);
+                          setSelectedAdvancedConfig(config || defaultCfg);
+                          setIsAdvancedModalOpen(true);
+                        }}>
+                          <Settings className="h-3 w-3" />
                         </Button>
                       </div>
                     </div>
@@ -638,28 +1007,7 @@ export function AIControlPanelUnified() {
                   {config && (
                     <CardContent className="space-y-4">
                       {/* Personalidade */}
-                      <div className="space-y-2">
-                        <Label>Personalidade</Label>
-                        <div className="flex gap-2">
-                          {func.personalities.map((personality) => {
-                            const personalityInfo = personalities[personality as keyof typeof personalities];
-                            const PersonalityIcon = personalityInfo.icon;
-                            
-                            return (
-                              <Button
-                                key={personality}
-                                variant={config.personality === personality ? 'default' : 'outline'}
-                                size="sm"
-                                onClick={() => saveConfiguration({ ...config, personality: personality as 'drvital' | 'sofia' })}
-                                className="flex items-center gap-2"
-                              >
-                                <PersonalityIcon className="h-4 w-4" />
-                                {personalityInfo.name}
-                              </Button>
-                            );
-                          })}
-                        </div>
-                      </div>
+                      {/* Personalidade removida no modo enxuto */}
 
                       {/* Configuração IA */}
                       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -688,7 +1036,7 @@ export function AIControlPanelUnified() {
                           <Label>Serviço</Label>
                           <Select
                             value={config.service}
-                            onValueChange={(value) => saveConfiguration({ ...config, service: value as 'openai' | 'gemini' | 'sofia' })}
+                            onValueChange={(value) => saveConfiguration({ ...config, service: value as 'openai' | 'gemini' | 'ollama' })}
                           >
                             <SelectTrigger>
                               <SelectValue />
@@ -696,14 +1044,14 @@ export function AIControlPanelUnified() {
                             <SelectContent>
                               <SelectItem value="openai">OpenAI</SelectItem>
                               <SelectItem value="gemini">Google Gemini</SelectItem>
-                              <SelectItem value="sofia">Sofia Chat</SelectItem>
+                              <SelectItem value="ollama">Ollama (Local)</SelectItem>
                             </SelectContent>
                           </Select>
                         </div>
 
                         {/* Modelo */}
                         <div className="space-y-2">
-                          <Label>Modelo</Label>
+                      <Label>Modelo</Label>
                           <Select
                             value={config.model}
                             onValueChange={(value) => saveConfiguration({ ...config, model: value })}
@@ -755,7 +1103,83 @@ export function AIControlPanelUnified() {
           </div>
         </TabsContent>
 
-        {/* Aba de Documentos */}
+        {/* Dialogo Avançado (acessível pelos botões de engrenagem) */}
+        <Dialog open={isAdvancedModalOpen} onOpenChange={setIsAdvancedModalOpen}>
+          <DialogContent className="max-w-3xl">
+            <DialogHeader>
+              <DialogTitle>Configuração Avançada: {selectedFunctionTitle || selectedAdvancedConfig?.functionality}</DialogTitle>
+            </DialogHeader>
+            {selectedAdvancedConfig && (
+              <div className="grid md:grid-cols-2 gap-4">
+                <Card>
+                  <CardHeader className="pb-2"><CardTitle className="text-sm">Status</CardTitle></CardHeader>
+                  <CardContent className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <span>Ativo</span>
+                      <Switch className="data-[state=checked]:!bg-green-500 data-[state=unchecked]:!bg-red-500" checked={selectedAdvancedConfig.is_enabled} onCheckedChange={(chk) => setSelectedAdvancedConfig({ ...selectedAdvancedConfig, is_enabled: chk })} />
+                    </div>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardHeader className="pb-2"><CardTitle className="text-sm">Métricas</CardTitle></CardHeader>
+                  <CardContent className="text-sm space-y-1">
+                    <div>Tokens: {selectedAdvancedConfig.max_tokens}</div>
+                    <div>Temperatura: {selectedAdvancedConfig.temperature}</div>
+                  </CardContent>
+                </Card>
+                <Card className="md:col-span-2">
+                  <CardHeader className="pb-2"><CardTitle className="text-sm">Configuração de IA</CardTitle></CardHeader>
+                  <CardContent className="grid md:grid-cols-2 gap-4">
+                    <div>
+                      <Label>Serviço</Label>
+                      <Select value={selectedAdvancedConfig.service} onValueChange={(v) => setSelectedAdvancedConfig({ ...selectedAdvancedConfig, service: v as any, model: models[v as keyof typeof models]?.[0]?.value || selectedAdvancedConfig.model })}>
+                        <SelectTrigger><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="openai">OpenAI</SelectItem>
+                          <SelectItem value="gemini">Google Gemini</SelectItem>
+                          <SelectItem value="ollama">Ollama (Local)</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div>
+                      <Label>Modelo</Label>
+                      <Select value={selectedAdvancedConfig.model} onValueChange={(v) => setSelectedAdvancedConfig({ ...selectedAdvancedConfig, model: v })}>
+                        <SelectTrigger><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          {models[selectedAdvancedConfig.service as keyof typeof models]?.map((m) => (
+                            <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="md:col-span-2 grid md:grid-cols-2 gap-4">
+                      <div>
+                        <Label>Tokens Máximos: {selectedAdvancedConfig.max_tokens}</Label>
+                        <Slider value={[selectedAdvancedConfig.max_tokens]} onValueChange={(val) => setSelectedAdvancedConfig({ ...selectedAdvancedConfig, max_tokens: val[0] })} min={1000} max={8192} step={100} />
+                      </div>
+                      <div>
+                        <Label>Temperatura: {selectedAdvancedConfig.temperature}</Label>
+                        <Slider value={[selectedAdvancedConfig.temperature]} onValueChange={(val) => setSelectedAdvancedConfig({ ...selectedAdvancedConfig, temperature: val[0] })} min={0} max={1} step={0.1} />
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+                <Card className="md:col-span-2">
+                  <CardHeader className="pb-2"><CardTitle className="text-sm">Prompt do Sistema</CardTitle></CardHeader>
+                  <CardContent>
+                    <Textarea rows={4} value={selectedAdvancedConfig.system_prompt || ''} onChange={(e) => setSelectedAdvancedConfig({ ...selectedAdvancedConfig, system_prompt: e.target.value })} />
+                    <p className="text-xs text-muted-foreground mt-1">Usado nesta funcionalidade: {selectedFunctionTitle || selectedAdvancedConfig.functionality}</p>
+                  </CardContent>
+                </Card>
+              </div>
+            )}
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setIsAdvancedModalOpen(false)}>Fechar</Button>
+              <Button onClick={() => { if (selectedAdvancedConfig) { saveConfiguration(selectedAdvancedConfig); setIsAdvancedModalOpen(false); } }}>Salvar</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+        {showDocuments && (
         <TabsContent value="documents" className="space-y-4">
           <Alert>
             <BookOpen className="h-4 w-4" />
@@ -863,7 +1287,29 @@ export function AIControlPanelUnified() {
                           </p>
                         </div>
                       </div>
-                      <Badge variant="outline">{doc.type}</Badge>
+                      <div className="flex items-center gap-2">
+                        <Badge variant="outline">{doc.type}</Badge>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={async () => {
+                            const ok = window.confirm(`Remover documento "${doc.name}"?`);
+                            if (!ok) return;
+                            const { error } = await supabase
+                              .from('ai_documents')
+                              .delete()
+                              .eq('id', doc.id);
+                            if (error) {
+                              toast.error('Erro ao remover documento');
+                            } else {
+                              toast.success('Documento removido');
+                              await loadDocuments();
+                            }
+                          }}
+                        >
+                          Remover
+                        </Button>
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -871,22 +1317,102 @@ export function AIControlPanelUnified() {
             </CardContent>
           </Card>
         </TabsContent>
+        )}
 
         {/* Aba de Testes */}
         <TabsContent value="testing" className="space-y-4">
           <Alert>
             <TestTube className="h-4 w-4" />
             <AlertDescription>
-              <strong>Teste Individual:</strong> Teste cada configuração separadamente para verificar 
-              se está funcionando corretamente e usando a base de conhecimento.
+              <strong>Testes Rápidos:</strong> Use os botões abaixo para validar os provedores. Se um botão não responder,
+              verifique as chaves de API/endpoint no servidor.
             </AlertDescription>
           </Alert>
 
-          {/* Resultados dos Testes */}
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base">Executar Testes</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="flex flex-wrap gap-2">
+                <Button onClick={() => testSpecificModel('openai' as any, 'gpt-4.1-2025-04-14', 'Teste rápido OpenAI')} disabled={testingLoading}>
+                  {testingLoading ? 'Testando...' : 'Testar OpenAI'}
+                </Button>
+                <Button variant="outline" onClick={() => testSpecificModel('gemini' as any, 'gemini-1.5-flash', 'Teste rápido Gemini')} disabled={testingLoading}>
+                  Testar Gemini
+                </Button>
+                <Button variant="outline" onClick={() => testSpecificModel('ollama' as any, 'llama3.1:8b-instruct-q4_0', 'Teste rápido Ollama')} disabled={testingLoading}>
+                  Testar Ollama
+                </Button>
+                {/* Removido: Sofia não é provedor, é persona */}
+                <Button variant="outline" onClick={handleFullTest} disabled={testingLoading}>
+                  Teste Completo
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Resultados dos Testes (provedores) */}
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between">
+              <CardTitle>Resultados dos Testes</CardTitle>
+              <Button variant="outline" size="sm" onClick={clearResults}>
+                Limpar
+              </Button>
+            </CardHeader>
+            <CardContent>
+              {results && results.length > 0 ? (
+                <div className="space-y-4">
+                  {results.map((result: any, index: number) => (
+                    <div key={index} className="border rounded-lg p-4 space-y-3">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                          {result.success ? (
+                            <CheckCircle2 className="h-5 w-5 text-green-500" />
+                          ) : (
+                            <XCircle className="h-5 w-5 text-red-500" />
+                          )}
+                          <div>
+                            <p className="font-medium">{result.service}</p>
+                            <p className="text-sm text-muted-foreground">{result.model}</p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Badge variant={result.success ? 'default' : 'destructive'}>
+                            {result.success ? 'Sucesso' : 'Erro'}
+                          </Badge>
+                          {result.duration && (
+                            <Badge variant="outline" className="flex items-center gap-1">
+                              <Clock className="h-3 w-3" />
+                              {result.duration}ms
+                            </Badge>
+                          )}
+                        </div>
+                      </div>
+                      {result.response && (
+                        <div className="bg-muted p-3 rounded-md">
+                          <p className="text-sm">{result.response}</p>
+                        </div>
+                      )}
+                      {result.error && (
+                        <div className="bg-destructive/10 p-3 rounded-md border border-destructive/20">
+                          <p className="text-sm text-destructive">{result.error}</p>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground">Nenhum resultado ainda. Execute um dos testes acima.</p>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Resultados por Função (opcional) */}
           {testResults.length > 0 && (
             <Card>
               <CardHeader>
-                <CardTitle>Resultados dos Testes</CardTitle>
+                <CardTitle>Resultados por Função</CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="space-y-4">
@@ -901,43 +1427,15 @@ export function AIControlPanelUnified() {
                           )}
                           <div>
                             <p className="font-medium">{result.functionality}</p>
-                            <p className="text-sm text-muted-foreground">
-                              {personalities[result.personality as keyof typeof personalities]?.name} • {result.service} • {result.model}
-                            </p>
+                            <p className="text-sm text-muted-foreground">{result.service} • {result.model}</p>
                           </div>
                         </div>
-                        
-                        <div className="flex items-center gap-2">
-                          <Badge variant={result.success ? 'default' : 'destructive'}>
-                            {result.success ? 'Sucesso' : 'Erro'}
-                          </Badge>
-                          
-                          {result.duration && (
-                            <Badge variant="outline" className="flex items-center gap-1">
-                              <Clock className="h-3 w-3" />
-                              {result.duration}ms
-                            </Badge>
-                          )}
-                        </div>
                       </div>
-
-                      <div className="flex items-center gap-4 text-sm">
-                        <div className="flex items-center gap-1">
-                          <BookOpen className="h-3 w-3" />
-                          Base: {result.used_knowledge_base ? '✅' : '❌'}
-                        </div>
-                        <div className="flex items-center gap-1">
-                          <Globe className="h-3 w-3" />
-                          Pesquisa: {result.used_external_search ? '✅' : '❌'}
-                        </div>
-                      </div>
-
                       {result.response && (
                         <div className="bg-muted p-3 rounded-md">
                           <p className="text-sm">{result.response}</p>
                         </div>
                       )}
-
                       {result.error && (
                         <div className="bg-destructive/10 p-3 rounded-md border border-destructive/20">
                           <p className="text-sm text-destructive">{result.error}</p>
@@ -1040,7 +1538,7 @@ export function AIControlPanelUnified() {
           </Card>
         </TabsContent>
 
-        {/* Aba de Controle Avançado */}
+        {showAdvanced && (
         <TabsContent value="advanced" className="space-y-4">
           <Alert>
             <Crown className="h-4 w-4" />
@@ -1179,7 +1677,7 @@ export function AIControlPanelUnified() {
                                         value={config?.service || 'openai'}
                                         onValueChange={(value) => {
                                           if (config) {
-                                            saveConfiguration({ ...config, service: value as 'openai' | 'gemini' | 'sofia' });
+                                            saveConfiguration({ ...config, service: value as 'openai' | 'gemini' | 'ollama' | 'sofia' });
                                           }
                                         }}
                                       >
@@ -1189,6 +1687,7 @@ export function AIControlPanelUnified() {
                                         <SelectContent>
                                           <SelectItem value="openai">OpenAI</SelectItem>
                                           <SelectItem value="gemini">Google Gemini</SelectItem>
+                                          <SelectItem value="ollama">Ollama (Local)</SelectItem>
                                           <SelectItem value="sofia">Sofia Chat</SelectItem>
                                         </SelectContent>
                                       </Select>
@@ -1221,11 +1720,14 @@ export function AIControlPanelUnified() {
                                               <SelectItem value="gemini-pro-vision">Gemini Pro Vision</SelectItem>
                                             </>
                                           )}
-                                          {config?.service === 'sofia' && (
+                                          {config?.service === 'ollama' && (
                                             <>
-                                              <SelectItem value="sofia-chat">Sofia Chat</SelectItem>
+                                              <SelectItem value="llama3.1:8b-instruct-q4_0">llama3.1:8b-instruct-q4_0</SelectItem>
+                                              <SelectItem value="qwen2.5:7b-instruct-q4_0">qwen2.5:7b-instruct-q4_0</SelectItem>
+                                              <SelectItem value="deepseek-r1:7b-qwen-distill-q4_K_M">deepseek-r1:7b-qwen-distill-q4_K_M</SelectItem>
                                             </>
                                           )}
+                                          {/* Sofia não é provedor: remover seleção de modelo para 'sofia' */}
                                         </SelectContent>
                                       </Select>
                                     </div>
@@ -1365,7 +1867,7 @@ export function AIControlPanelUnified() {
                                 </Card>
                               </div>
 
-                              {/* Prompt do Sistema */}
+                      {/* Prompt do Sistema */}
                               <Card>
                                 <CardHeader className="pb-3">
                                   <CardTitle className="text-sm flex items-center gap-2">
@@ -1374,23 +1876,20 @@ export function AIControlPanelUnified() {
                                   </CardTitle>
                                 </CardHeader>
                                 <CardContent>
-                                  <div className="space-y-2">
-                                    <Label>Prompt Personalizado</Label>
-                                    <Textarea
-                                      placeholder="Digite o prompt do sistema para esta função..."
-                                      value={config?.system_prompt || ''}
-                                      onChange={(e) => {
-                                        if (config) {
-                                          saveConfiguration({ ...config, system_prompt: e.target.value });
-                                        }
-                                      }}
-                                      rows={4}
-                                      className="font-mono text-sm"
-                                    />
-                                    <p className="text-xs text-muted-foreground">
-                                      Este prompt define como a IA deve se comportar para esta função específica.
-                                    </p>
-                                  </div>
+                          <div className="space-y-2">
+                            <Label>Prompt ativo apenas para Chat Diário</Label>
+                            <Textarea
+                              placeholder="Esta edição tem efeito principal no Chat Diário."
+                              value={config?.system_prompt || ''}
+                              onChange={(e) => {
+                                if (config) {
+                                  saveConfiguration({ ...config, system_prompt: e.target.value });
+                                }
+                              }}
+                              rows={4}
+                              className="font-mono text-sm"
+                            />
+                          </div>
                                 </CardContent>
                               </Card>
 
@@ -1460,6 +1959,7 @@ export function AIControlPanelUnified() {
             })}
           </div>
         </TabsContent>
+        )}
       </Tabs>
     </div>
   );

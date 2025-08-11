@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { supabase } from "@/integrations/supabase/client";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -42,6 +43,7 @@ export const ModuleModal = ({ isOpen, onClose, onSubmit, courses }: ModuleModalP
   const [isLoading, setIsLoading] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [imageUrl, setImageUrl] = useState<string>("");
+  const [file, setFile] = useState<File | null>(null);
 
   const handleInputChange = (field: keyof ModuleFormData, value: string | number | boolean) => {
     setFormData(prev => ({
@@ -87,10 +89,19 @@ export const ModuleModal = ({ isOpen, onClose, onSubmit, courses }: ModuleModalP
 
     setIsLoading(true);
     try {
+      let finalThumb: string | undefined = imageUrl || undefined;
+      if (!imageUrl && file) {
+        const path = `course-thumbnails/${Date.now()}_${file.name}`;
+        const { error: upErr } = await supabase.storage.from('course-thumbnails').upload(path, file, { cacheControl: '3600', upsert: false });
+        if (upErr) throw upErr;
+        const { data: pub } = supabase.storage.from('course-thumbnails').getPublicUrl(path);
+        finalThumb = pub?.publicUrl;
+      }
+
       const moduleData = {
         ...formData,
-        description: formData.description || "Módulo criado automaticamente", // Provide default description
-        thumbnail_url: imageUrl || undefined
+        description: formData.description || "Módulo criado automaticamente",
+        thumbnail_url: finalThumb
       };
       await onSubmit(moduleData);
       
@@ -104,6 +115,7 @@ export const ModuleModal = ({ isOpen, onClose, onSubmit, courses }: ModuleModalP
       });
       setErrors({});
       setImageUrl("");
+      setFile(null);
       onClose();
     } catch (error) {
       console.error("Erro ao criar módulo:", error);
@@ -227,6 +239,10 @@ export const ModuleModal = ({ isOpen, onClose, onSubmit, courses }: ModuleModalP
             <p className="text-gray-400 text-xs">
               URL direta da imagem para ser usada como capa do módulo
             </p>
+            <div className="mt-2">
+              <Label className="text-sm font-medium text-gray-300">ou Upload de arquivo</Label>
+              <Input type="file" accept="image/*" onChange={(e) => setFile(e.target.files?.[0] || null)} />
+            </div>
             {imageUrl && (
               <div className="mt-2">
                 <p className="text-sm text-gray-300 mb-2">Preview:</p>

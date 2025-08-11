@@ -72,7 +72,9 @@ serve(async (req) => {
   }
 
   try {
-    const { csvText, delimiter, dryRun, offset, limit, batchSize } = await req.json();
+    let body: any = {};
+    try { body = await req.json(); } catch { body = {}; }
+    const { csvText, delimiter, dryRun, offset, limit, batchSize } = body;
     if (!csvText) throw new Error('csvText é obrigatório');
 
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
@@ -81,7 +83,7 @@ serve(async (req) => {
     const bearer = authHeader.startsWith('Bearer ')
       ? authHeader.substring('Bearer '.length).trim()
       : undefined;
-    const serviceKey = bearer || Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+    const serviceKey = bearer || Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || Deno.env.get('SERVICE_ROLE_KEY');
     if (!serviceKey) {
       return new Response(JSON.stringify({ success: false, error: 'Missing service key' }), {
         status: 401,

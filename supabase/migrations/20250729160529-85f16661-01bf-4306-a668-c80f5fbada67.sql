@@ -15,10 +15,14 @@ FROM public.course_modules cm
 WHERE lessons.module_id = cm.id 
 AND lessons.course_id IS NULL;
 
--- 3. Habilitar RLS na tabela lessons
 ALTER TABLE public.lessons ENABLE ROW LEVEL SECURITY;
 
--- 4. Criar políticas RLS para lessons
+-- 4. Criar políticas RLS para lessons (admin-only para escrita)
+DROP POLICY IF EXISTS "Everyone can view published lessons" ON public.lessons;
+DROP POLICY IF EXISTS "Authenticated users can create lessons" ON public.lessons;
+DROP POLICY IF EXISTS "Authenticated users can update lessons" ON public.lessons;
+DROP POLICY IF EXISTS "Authenticated users can delete lessons" ON public.lessons;
+
 CREATE POLICY "Everyone can view published lessons" 
 ON public.lessons 
 FOR SELECT 
@@ -31,29 +35,41 @@ USING (
   )
 );
 
-CREATE POLICY "Authenticated users can create lessons" 
+CREATE POLICY "Admin can insert lessons" 
 ON public.lessons 
 FOR INSERT 
-WITH CHECK (auth.uid() IS NOT NULL);
+WITH CHECK (auth.jwt() ->> 'role' = 'admin');
 
-CREATE POLICY "Authenticated users can update lessons" 
+CREATE POLICY "Admin can update lessons" 
 ON public.lessons 
 FOR UPDATE 
-USING (auth.uid() IS NOT NULL);
+USING (auth.jwt() ->> 'role' = 'admin');
 
-CREATE POLICY "Authenticated users can delete lessons" 
+CREATE POLICY "Admin can delete lessons" 
 ON public.lessons 
 FOR DELETE 
-USING (auth.uid() IS NOT NULL);
+USING (auth.jwt() ->> 'role' = 'admin');
 
 -- 5. Adicionar foreign keys para integridade
-ALTER TABLE public.lessons 
-ADD CONSTRAINT fk_lessons_module 
-FOREIGN KEY (module_id) REFERENCES public.course_modules(id) ON DELETE CASCADE;
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint WHERE conname = 'fk_lessons_module'
+  ) THEN
+    ALTER TABLE public.lessons 
+    ADD CONSTRAINT fk_lessons_module 
+    FOREIGN KEY (module_id) REFERENCES public.course_modules(id) ON DELETE CASCADE;
+  END IF;
+END $$;
 
-ALTER TABLE public.lessons 
-ADD CONSTRAINT fk_lessons_course 
-FOREIGN KEY (course_id) REFERENCES public.courses(id) ON DELETE CASCADE;
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint WHERE conname = 'fk_lessons_course'
+  ) THEN
+    ALTER TABLE public.lessons 
+    ADD CONSTRAINT fk_lessons_course 
+    FOREIGN KEY (course_id) REFERENCES public.courses(id) ON DELETE CASCADE;
+  END IF;
+END $$;
 
 -- 6. Criar trigger para updated_at
 CREATE TRIGGER update_lessons_updated_at

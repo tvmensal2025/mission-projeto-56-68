@@ -1,985 +1,664 @@
-import React, { useEffect, useRef, useState } from 'react';
-import { supabase } from '@/integrations/supabase/client';
-import { User } from '@supabase/supabase-js';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import React, { useEffect, useState } from 'react';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Progress } from '@/components/ui/progress';
 import { Input } from '@/components/ui/input';
-import { Textarea } from '@/components/ui/textarea';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
-import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
-import { useToast } from '@/hooks/use-toast';
-import { Calendar, MessageSquare, Printer, RefreshCw, ShoppingCart, Star, TrendingUp, Utensils } from 'lucide-react';
-import { ConfettiAnimation, useConfetti } from '@/components/gamification/ConfettiAnimation';
+import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
+import { 
+  Calendar, 
+  Target, 
+  TrendingUp, 
+  Apple, 
+  BarChart3,
+  ChefHat,
+  Lightbulb,
+  Zap
+} from 'lucide-react';
+import { NutritionTracker } from '@/components/nutrition-tracking/NutritionTracker';
+import { useNutritionTracking } from '@/hooks/useNutritionTracking';
+import { findSuperfoods, findFoodsByDiet } from '@/data/open-nutri-tracker-database';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import SofiaChat from '@/components/sofia/SofiaChat';
-import SofiaMealSuggestionModal, { MealPlanGenerated, MealEntry } from '@/components/sofia/SofiaMealSuggestionModal';
-import SofiaIntakeDialog, { IntakeAnswers } from '@/components/sofia/SofiaIntakeDialog';
-import SofiaMealQnAChat, { MealQnAResult } from '@/components/sofia/SofiaMealQnAChat';
-import { exportMealPlanToPDF } from '@/utils/exportMealPlanPDF';
-import { openMealPlanHTML, downloadMealPlanHTML } from '@/utils/exportMealPlanHTML';
-import MealSwapModal from '@/components/sofia/MealSwapModal';
-import MetricCard from '@/components/ui/MetricCard';
-import { exportShoppingListToPDF } from '@/utils/exportShoppingListPDF';
+import { useWeightMeasurement } from '@/hooks/useWeightMeasurement';
+import { openWeeklyMealPlanHTML } from '@/utils/exportMealPlanHTML';
+import { openWeeklyMealPlanClinicalHTML } from '@/utils/exportMealPlanHTML';
+import NutritionWeeklyCharts, { DaySeriesPoint } from '@/components/charts/NutritionWeeklyCharts';
+import { DrVitalNutritionInsights } from '@/components/sofia/DrVitalNutritionInsights';
+import { supabase } from '@/integrations/supabase/client';
 
-type BudgetLevel = 'baixo' | 'médio' | 'alto';
-
-interface DailyMeals {
-  breakfast?: MealEntry;
-  lunch?: MealEntry;
-  snack?: MealEntry;
-  dinner?: MealEntry;
-}
-
-interface MealPlan {
-  id?: string;
-  type: 'dia' | 'semana';
-  createdAt: string;
-  tags?: string[];
-  score?: number; // 0-100
-  days: Record<string, DailyMeals>; // ex.: segunda, terca, ...
-}
-
-interface FoodPreferences {
-  alergias: string;
-  restricoes: string;
-  dislikes: string;
-  orcamento: BudgetLevel;
-  tempoPreparoMin: number;
-  utensilios: string;
-}
-
-const defaultPreferences: FoodPreferences = {
-  alergias: '',
-  restricoes: '',
-  dislikes: '',
-  orcamento: 'médio',
-  tempoPreparoMin: 30,
-  utensilios: ''
-};
-
-const SofiaNutricionalPage: React.FC = () => {
-  const [user, setUser] = useState<User | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [currentPlan, setCurrentPlan] = useState<MealPlan | null>(null);
-  const [history, setHistory] = useState<MealPlan[]>([]);
-  const [lastSofiaInteraction, setLastSofiaInteraction] = useState<string | null>(null);
-  const [preferences, setPreferences] = useState<FoodPreferences>(defaultPreferences);
-  const [chatOpen, setChatOpen] = useState(false);
-  const [suggestionOpen, setSuggestionOpen] = useState(false);
-  const [targetCalories, setTargetCalories] = useState<number | undefined>(undefined);
-  const [shoppingOpen, setShoppingOpen] = useState(false);
-  const [shoppingMultiplier, setShoppingMultiplier] = useState<number>(1);
-  const [intakeOpen, setIntakeOpen] = useState(false);
-  const [lastIntake, setLastIntake] = useState<IntakeAnswers | null>(null);
-  const [swapOpen, setSwapOpen] = useState(false);
-  const [swapMealKey, setSwapMealKey] = useState<keyof DailyMeals | null>(null);
-  const planRef = useRef<HTMLDivElement>(null);
-  const { toast } = useToast();
-  const { trigger: confettiTrigger, celebrate } = useConfetti();
-
-  // Estimador leve de macros para exibição/metric cards (mesma base do HTML/PDF)
-  type Nutrients = { kcal: number; protein_g: number; fat_g: number; carbs_g: number; fiber_g: number; sodium_mg: number };
-  const perGram = (name: string): Nutrients => {
-    const n = (name || '').toLowerCase();
-    if (n.includes('arroz')) return { kcal: 1.3, protein_g: 0.027, fat_g: 0.003, carbs_g: 0.28, fiber_g: 0.004, sodium_mg: 0.01 };
-    if (n.includes('frango')) return { kcal: 1.1, protein_g: 0.206, fat_g: 0.036, carbs_g: 0, fiber_g: 0, sodium_mg: 0.74 };
-    if (n.includes('peixe')) return { kcal: 1.0, protein_g: 0.22, fat_g: 0.02, carbs_g: 0, fiber_g: 0, sodium_mg: 0.6 };
-    if (n.includes('atum')) return { kcal: 1.32, protein_g: 0.29, fat_g: 0.01, carbs_g: 0, fiber_g: 0, sodium_mg: 0.37 };
-    if (n.includes('ovo')) return { kcal: 1.56, protein_g: 0.126, fat_g: 0.106, carbs_g: 0.012, fiber_g: 0, sodium_mg: 1.24 };
-    if (n.includes('aveia')) return { kcal: 3.89, protein_g: 0.17, fat_g: 0.07, carbs_g: 0.66, fiber_g: 0.11, sodium_mg: 0.02 };
-    if (n.includes('pão') || n.includes('pao')) return { kcal: 2.6, protein_g: 0.08, fat_g: 0.03, carbs_g: 0.49, fiber_g: 0.025, sodium_mg: 5 };
-    if (n.includes('banana')) return { kcal: 0.89, protein_g: 0.011, fat_g: 0.003, carbs_g: 0.23, fiber_g: 0.026, sodium_mg: 0.001 };
-    if (n.includes('maç') || n.includes('maca')) return { kcal: 0.52, protein_g: 0.003, fat_g: 0.002, carbs_g: 0.14, fiber_g: 0.024, sodium_mg: 0.001 };
-    if (n.includes('iogurte')) return { kcal: 0.63, protein_g: 0.035, fat_g: 0.033, carbs_g: 0.049, fiber_g: 0, sodium_mg: 0.5 };
-    if (n.includes('leite')) return { kcal: 0.64, protein_g: 0.033, fat_g: 0.036, carbs_g: 0.05, fiber_g: 0, sodium_mg: 0.44 };
-    if (n.includes('queijo')) return { kcal: 4, protein_g: 0.25, fat_g: 0.33, carbs_g: 0.013, fiber_g: 0, sodium_mg: 6 };
-    if (n.includes('batata doce')) return { kcal: 0.86, protein_g: 0.016, fat_g: 0.001, carbs_g: 0.20, fiber_g: 0.03, sodium_mg: 0.055 };
-    if (n.includes('batata')) return { kcal: 0.77, protein_g: 0.02, fat_g: 0.001, carbs_g: 0.17, fiber_g: 0.026, sodium_mg: 0.005 };
-    if (n.includes('salada') || n.includes('legume')) return { kcal: 0.25, protein_g: 0.012, fat_g: 0.003, carbs_g: 0.04, fiber_g: 0.02, sodium_mg: 0.01 };
-    if (n.includes('azeite')) return { kcal: 8.84, protein_g: 0, fat_g: 1.0, carbs_g: 0, fiber_g: 0, sodium_mg: 0 };
-    if (n.includes('molho')) return { kcal: 0.29, protein_g: 0.015, fat_g: 0.002, carbs_g: 0.05, fiber_g: 0.015, sodium_mg: 4 };
-    return { kcal: 1.0, protein_g: 0, fat_g: 0, carbs_g: 0, fiber_g: 0, sodium_mg: 0 };
-  };
-  const computeMeal = (m: any): Nutrients => {
-    if (!m) return { kcal: 0, protein_g: 0, fat_g: 0, carbs_g: 0, fiber_g: 0, sodium_mg: 0 };
-    const base = (m.ingredients || []).reduce((acc: Nutrients, ing: any) => {
-      const g = Number(ing.quantity || 0);
-      const p = perGram(ing.name);
-      acc.kcal += p.kcal * g;
-      acc.protein_g += p.protein_g * g;
-      acc.fat_g += p.fat_g * g;
-      acc.carbs_g += p.carbs_g * g;
-      acc.fiber_g += p.fiber_g * g;
-      acc.sodium_mg += p.sodium_mg * g;
-      return acc;
-    }, { kcal: 0, protein_g: 0, fat_g: 0, carbs_g: 0, fiber_g: 0, sodium_mg: 0 });
-    if (m.calories_kcal && base.kcal === 0) base.kcal = m.calories_kcal;
-    return base;
-  };
-  const computeDailyTotals = (plan: MealPlan | null): Nutrients => {
-    if (!plan) return { kcal: 0, protein_g: 0, fat_g: 0, carbs_g: 0, fiber_g: 0, sodium_mg: 0 };
-    const day = plan.days['hoje'] || plan.days[Object.keys(plan.days)[0]];
-    const meals = [day?.breakfast, day?.lunch, day?.snack, day?.dinner];
-    return meals.reduce((acc: Nutrients, m: any) => {
-      const n = computeMeal(m);
-      acc.kcal += n.kcal; acc.protein_g += n.protein_g; acc.fat_g += n.fat_g; acc.carbs_g += n.carbs_g; acc.fiber_g += n.fiber_g; acc.sodium_mg += n.sodium_mg;
-      return acc;
-    }, { kcal: 0, protein_g: 0, fat_g: 0, carbs_g: 0, fiber_g: 0, sodium_mg: 0 });
-  };
-
-  // Histórico local para evitar dependência de tabelas durante a v2
-  const HISTORY_STORAGE_KEY = 'sofia_meal_plan_history_v2';
-  const generateId = () => (typeof crypto !== 'undefined' && 'randomUUID' in crypto ? (crypto as any).randomUUID() : `${Date.now()}_${Math.random().toString(36).slice(2,10)}`);
-  const loadHistoryLocal = (): MealPlan[] => {
-    try {
-      const raw = localStorage.getItem(HISTORY_STORAGE_KEY);
-      if (!raw) return [];
-      const parsed = JSON.parse(raw);
-      return Array.isArray(parsed) ? parsed : [];
-    } catch {
-      return [];
-    }
-  };
-  const saveHistoryLocal = (plans: MealPlan[]) => {
-    try { localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(plans.slice(0, 20))); } catch { /* ignore */ }
-  };
-  const pushToHistory = (plan: MealPlan) => {
-    const next: MealPlan = { id: plan.id || generateId(), ...plan } as MealPlan;
-    const current = loadHistoryLocal();
-    const updated = [next, ...current].slice(0, 20);
-    saveHistoryLocal(updated);
-    setHistory(updated);
-  };
+export const SofiaNutricionalPage: React.FC = () => {
+  const { meals, goals, loading, error, getDailyNutrition, getNutritionStats, updateGoals } = useNutritionTracking();
+  const [selectedDate] = useState(new Date().toISOString().split('T')[0]);
+  const [activeTab, setActiveTab] = useState('tracker');
+  const [plan, setPlan] = useState<any[]>([]);
+  const [planLoading, setPlanLoading] = useState(false);
+  const [mealPrefs, setMealPrefs] = useState<{[k:string]: boolean}>({
+    breakfast: true,
+    lunch: true,
+    snack: true,
+    dinner: true,
+    supper: false,
+  });
+  const [wizardOpen, setWizardOpen] = useState(false);
+  const [prefEarlySnack, setPrefEarlySnack] = useState(false); // desjejum
+  const [prefAfternoonSnack, setPrefAfternoonSnack] = useState(true); // café da tarde
+  const [diet, setDiet] = useState<string | undefined>(undefined);
+  const [likes, setLikes] = useState<string>('');
+  const [dislikes, setDislikes] = useState<string>('');
+  const [allergies, setAllergies] = useState<string>('');
+  const [maxPrep, setMaxPrep] = useState<number>(40);
+  const [daysCount, setDaysCount] = useState<number>(7);
+  const [savedPlans, setSavedPlans] = useState<Array<{ id: string; plan_date: string; total_kcal: number }>>([]);
+  const stats = getNutritionStats(7);
+  const dailyNutrition = getDailyNutrition(selectedDate);
+  const superfoods = findSuperfoods();
+  const ketoFoods = findFoodsByDiet('keto');
+  const { measurements, physicalData, fetchMeasurements } = useWeightMeasurement();
+  const [weeklySeries, setWeeklySeries] = useState<DaySeriesPoint[]>([]);
 
   useEffect(() => {
-    let mounted = true;
-    supabase.auth.getUser().then(({ data: { user } }) => {
-      if (!mounted) return;
-      setUser(user);
-      setLoading(false);
-    });
-    // Buscar última pesagem para meta calórica (TMB * 1.2)
-    (async () => {
+    const loadWeekly = async () => {
       try {
-        const { data: session } = await supabase.auth.getSession();
-        const userId = session.session?.user?.id;
-        if (!userId) return;
-        const { data, error } = await supabase
-          .from('weight_measurements')
-          .select('metabolismo_basal_kcal')
-          .eq('user_id', userId)
-          .order('measurement_date', { ascending: false })
-          .limit(1);
-        if (!error && data && data.length > 0 && data[0].metabolismo_basal_kcal) {
-          const kcal = Math.round((data[0].metabolismo_basal_kcal as number) * 1.2);
-          setTargetCalories(kcal);
-        }
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return;
+        const end = new Date();
+        const start = new Date();
+        start.setDate(end.getDate() - 6);
+        const sb: any = supabase as any;
+        const { data } = await sb
+          .from('nutrition_daily_summary')
+          .select('date,total_calories,total_protein,total_carbs,total_fat')
+          .eq('user_id', user.id)
+          .gte('date', start.toISOString().slice(0,10))
+          .lte('date', end.toISOString().slice(0,10))
+          .order('date', { ascending: true });
+
+        const map: Record<string, any> = {};
+        (data || []).forEach((row: any) => { map[row.date] = row; });
+        const series: DaySeriesPoint[] = Array.from({ length: 7 }).map((_, i) => {
+          const d = new Date(start);
+          d.setDate(start.getDate() + i);
+          const key = d.toISOString().slice(0,10);
+          const row = (map as any)[key] || null;
+          return {
+            dateLabel: d.toLocaleDateString('pt-BR').slice(0,5),
+            calories: row?.total_calories || 0,
+            protein: row?.total_protein || 0,
+            carbs: row?.total_carbs || 0,
+            fat: row?.total_fat || 0,
+          } as DaySeriesPoint;
+        });
+        setWeeklySeries(series);
       } catch (e) {
-        console.warn('Falha ao obter TMB:', e);
+        setWeeklySeries(Array.from({ length: 7 }).map((_, i) => {
+          const d = new Date(); d.setDate(d.getDate() - (6 - i));
+          return { dateLabel: d.toLocaleDateString('pt-BR').slice(0,5), calories: stats.averageCalories, protein: stats.averageProtein, carbs: stats.averageCarbs, fat: stats.averageFat } as DaySeriesPoint;
+        }));
       }
-    })();
-    // Carregar histórico do localStorage (v2 sem dependência de tabela remota)
-    setHistory(loadHistoryLocal());
-    return () => {
-      mounted = false;
     };
+    loadWeekly();
+    const loadSavedPlans = async () => {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return;
+        const sb: any = supabase as any;
+        const { data } = await sb
+          .from('meal_plans')
+          .select('id,plan_date,total_kcal')
+          .eq('user_id', user.id)
+          .order('plan_date', { ascending: false })
+          .limit(10);
+        setSavedPlans((data as any[])?.map((r: any) => ({ id: r.id, plan_date: r.plan_date, total_kcal: Math.round(r.total_kcal || 0) })) || []);
+      } catch {}
+    };
+    loadSavedPlans();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const handleDownloadPDF = async () => {
-    try {
-      if (!currentPlan) return;
-      const today = currentPlan.days['hoje'] || currentPlan.days[Object.keys(currentPlan.days)[0]];
-      await exportMealPlanToPDF({
-        dateLabel: new Date(currentPlan.createdAt).toLocaleDateString('pt-BR'),
-        targetCaloriesKcal: targetCalories,
-        guaranteed: currentPlan.tags?.includes('Garantido'),
-        meals: {
-          breakfast: today?.breakfast as any,
-          lunch: today?.lunch as any,
-          afternoon_snack: today?.snack as any,
-          dinner: today?.dinner as any,
-          supper: undefined,
-        }
-      });
-      toast({ title: 'PDF gerado', description: 'Seu cardápio foi exportado com sucesso.' });
-    } catch (err) {
-      toast({ title: 'Erro ao exportar', description: 'Não foi possível gerar o PDF.', variant: 'destructive' });
+  const latest = measurements && measurements.length > 0 ? measurements[0] : null;
+
+  const activityFactor = (level?: string) => {
+    switch ((level || '').toLowerCase()) {
+      case 'sedentario':
+      case 'sedentário':
+      case 'sedentary':
+        return 1.2;
+      case 'leve':
+      case 'light':
+        return 1.375;
+      case 'moderado':
+      case 'moderate':
+        return 1.55;
+      case 'alto':
+      case 'intenso':
+      case 'high':
+        return 1.725;
+      case 'muito alto':
+      case 'very high':
+        return 1.9;
+      default:
+        return 1.375; // leve como padrão
     }
   };
 
-  const handlePrint = () => {
-    window.print();
-    toast({ title: 'Impressão iniciada', description: 'Preparando seu cardápio para impressão.' });
+  const computeMetabolism = () => {
+    const weight = latest?.peso_kg;
+    const height = physicalData?.altura_cm;
+    const age = physicalData?.idade;
+    const sex = (physicalData?.sexo || 'masc').toLowerCase();
+
+    if (!weight || !height || !age) return { bmr: latest?.metabolismo_basal_kcal, tdee: undefined };
+
+    // Mifflin-St Jeor
+    const bmrCalc = sex.startsWith('f')
+      ? Math.round(10 * weight + 6.25 * height - 5 * age - 161)
+      : Math.round(10 * weight + 6.25 * height - 5 * age + 5);
+
+    const bmr = latest?.metabolismo_basal_kcal || bmrCalc;
+    const tdee = Math.round(bmr * activityFactor(physicalData?.nivel_atividade));
+    return { bmr, tdee };
   };
 
-  const handleOpenHTML = () => {
-    if (!currentPlan) return;
-    const today = currentPlan.days['hoje'] || currentPlan.days[Object.keys(currentPlan.days)[0]];
-    openMealPlanHTML({
-      dateLabel: new Date(currentPlan.createdAt).toLocaleDateString('pt-BR'),
-      targetCaloriesKcal: targetCalories,
-      guaranteed: currentPlan.tags?.includes('Garantido'),
-      meals: {
-        breakfast: today?.breakfast as any,
-        lunch: today?.lunch as any,
-        afternoon_snack: today?.snack as any,
-        dinner: today?.dinner as any,
-        supper: undefined,
-      }
-    });
-  };
+  const { bmr, tdee } = computeMetabolism();
 
-  const handleDownloadHTML = () => {
-    if (!currentPlan) return;
-    const today = currentPlan.days['hoje'] || currentPlan.days[Object.keys(currentPlan.days)[0]];
-    downloadMealPlanHTML({
-      dateLabel: new Date(currentPlan.createdAt).toLocaleDateString('pt-BR'),
-      targetCaloriesKcal: targetCalories,
-      guaranteed: currentPlan.tags?.includes('Garantido'),
-      meals: {
-        breakfast: today?.breakfast as any,
-        lunch: today?.lunch as any,
-        afternoon_snack: today?.snack as any,
-        dinner: today?.dinner as any,
-        supper: undefined,
-      }
-    });
-  };
+  const selectedMeals = (() => {
+    const base = Object.entries(mealPrefs).filter(([,v]) => v).map(([k]) => k);
+    // Mapear desjejum e café da tarde para 'snack'
+    const includeSnack = prefEarlySnack || prefAfternoonSnack || base.includes('snack');
+    const withSnack = base.filter((m) => m !== 'snack');
+    if (includeSnack) withSnack.push('snack');
+    return withSnack;
+  })();
 
-  const handleSavePreferences = () => {
-    // Persistência será conectada ao Supabase após confirmação do schema
-    toast({ title: 'Preferências salvas', description: 'Suas preferências alimentares foram registradas.' });
-  };
-
-  const handleResetPreferences = () => {
-    setPreferences(defaultPreferences);
-    toast({ title: 'Preferências redefinidas', description: 'Voltamos aos padrões iniciais.' });
-  };
-
-  const handleOpenShoppingList = () => {
-    setShoppingOpen(true);
-  };
-
-  // Novo: gerar plano via Edge Function nutrition-planner
-  const generatePlanWithPlanner = async (intake: IntakeAnswers) => {
+  const generatePlan = async () => {
     try {
-      const { data, error } = await supabase.functions.invoke('nutrition-planner', {
-        body: {
-          intake: {
-            objetivo: intake.objetivo,
-            alergias: intake.alergias,
-            restricoesReligiosas: intake.restricoesReligiosas,
-            preferencias: intake.preferencias,
-            naoGosta: intake.naoGosta,
-            rotinaHorarios: intake.rotinaHorarios,
-            orcamento: intake.orcamento,
-            tempoPreparoMin: intake.tempoPreparoMin,
-            utensilios: intake.utensilios,
-          },
-          save: false,
-        },
+      setPlanLoading(true);
+      const res = await fetch(`${import.meta.env.VITE_SUPABASE_EDGE_URL || ''}/generate-meal-plan`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          days: Math.min(Math.max(daysCount || 7, 1), 14),
+          meals: selectedMeals.length > 0 ? selectedMeals : ["breakfast","lunch","snack","dinner"],
+          calories: goals.calories,
+          protein: goals.protein,
+          diet,
+          allergies: allergies ? allergies.split(',').map(s=>s.trim()).filter(Boolean) : [],
+          dislikes: dislikes ? dislikes.split(',').map(s=>s.trim()).filter(Boolean) : [],
+          likes: likes ? likes.split(',').map(s=>s.trim()).filter(Boolean) : [],
+          preferredTags: [],
+          maxPrepMinutes: maxPrep,
+        })
       });
-
-      if (error || !data?.success) {
-        toast({ title: 'Falha ao gerar plano', description: 'Tentando fluxo alternativo de sugestão…', variant: 'destructive' });
-        setSuggestionOpen(true);
-        return;
-      }
-
-      const bySlot = (data.by_slot || {}) as Record<string, { resolved: any[]; totals: any }>;
-      const toMeal = (slot: string) => {
-        const r = bySlot[slot]?.resolved || [];
-        if (!r.length) return undefined;
-        const ingredients = r
-          .filter((x: any) => x?.nutrients)
-          .map((x: any) => ({ name: x.matched_canonical_name || x.input?.name, quantity: Math.round(x.effective_grams || 0), unit: 'g' }));
-        const kcal = Math.round(bySlot[slot]?.totals?.kcal || 0);
-        return { name: slot, calories_kcal: kcal, ingredients } as any;
-      };
-
-      const daily: DailyMeals = {
-        breakfast: toMeal('breakfast'),
-        lunch: toMeal('lunch'),
-        snack: toMeal('snack'),
-        dinner: toMeal('dinner'),
-      };
-
-      setCurrentPlan({
-        type: 'dia',
-        createdAt: new Date().toISOString(),
-        score: Math.min(100, Math.round(((data.totals?.protein_g || 0) + 1) * 2)),
-        tags: ['Sofia Pro', data.guarantee ? 'Garantido' : 'Estimado'],
-        days: { hoje: daily },
-      });
-      pushToHistory({
-        type: 'dia',
-        createdAt: new Date().toISOString(),
-        score: Math.min(100, Math.round(((data.totals?.protein_g || 0) + 1) * 2)),
-        tags: ['Sofia Pro', data.guarantee ? 'Garantido' : 'Estimado'],
-        days: { hoje: daily },
-      });
-      setLastSofiaInteraction(new Date().toISOString());
-      toast({ title: 'Plano gerado', description: data.guarantee ? 'Metas atendidas (Garantido).' : 'Plano estimado.' });
-      // Armazena sugestões de troca quando existirem
-      (window as any).__sofia_swap_suggestions = data.swap_suggestions || null;
-      celebrate();
-    } catch (e: any) {
-      console.error('planner error', e);
-      toast({ title: 'Erro ao gerar', description: 'Use o fluxo alternativo de sugestão.', variant: 'destructive' });
-      setSuggestionOpen(true);
-    }
-  };
-
-  // Salvar plano no Supabase via Edge Function (meal_plans + itens)
-  const handleSavePlan = async () => {
-    try {
-      if (!currentPlan) {
-        toast({ title: 'Sem plano ativo', description: 'Gere um plano antes de salvar.', variant: 'destructive' });
-        return;
-      }
-
-      const intakeToSave: IntakeAnswers = lastIntake || {
-        objetivo: 'Plano diário',
-        alergias: preferences.alergias,
-        restricoesReligiosas: preferences.restricoes,
-        preferencias: preferences.dislikes ? `Evitar: ${preferences.dislikes}` : '',
-        naoGosta: preferences.dislikes,
-        rotinaHorarios: '',
-        orcamento: preferences.orcamento,
-        tempoPreparoMin: preferences.tempoPreparoMin,
-        utensilios: preferences.utensilios,
-      };
-
-      const { data, error } = await supabase.functions.invoke('nutrition-planner', {
-        body: {
-          intake: {
-            objetivo: intakeToSave.objetivo,
-            alergias: intakeToSave.alergias,
-            restricoesReligiosas: intakeToSave.restricoesReligiosas,
-            preferencias: intakeToSave.preferencias,
-            naoGosta: intakeToSave.naoGosta,
-            rotinaHorarios: intakeToSave.rotinaHorarios,
-            orcamento: intakeToSave.orcamento,
-            tempoPreparoMin: intakeToSave.tempoPreparoMin,
-            utensilios: intakeToSave.utensilios,
-          },
-          save: true,
-        },
-      });
-
-      if (error || !data?.success) {
-        toast({ title: 'Falha ao salvar', description: 'Tente novamente em instantes.', variant: 'destructive' });
-        return;
-      }
-
-      const planId = data.plan_id as string | null;
-      if (planId) {
-        const updated: MealPlan = { ...currentPlan, id: planId };
-        setCurrentPlan(updated);
-        // Atualiza histórico com id quando disponível
-        pushToHistory(updated);
-        toast({ title: 'Plano salvo', description: 'Seu cardápio foi salvo no seu perfil.' });
-      } else {
-        toast({ title: 'Plano salvo (parcial)', description: 'Plano salvo, mas sem ID retornado.' });
+      const data = await res.json();
+      setPlan(data.plan || []);
+      if (Array.isArray(data.plan) && data.plan.length) {
+        await (async () => {
+          try {
+            const { data: { user } } = await supabase.auth.getUser();
+            if (!user) return;
+            // salvar 7 dias em meal_plans + itens
+            for (let d = 0; d < data.plan.length; d++) {
+              const day = data.plan[d];
+              const planDate = new Date(); planDate.setDate(planDate.getDate() + d);
+              const slots = ['breakfast','lunch','snack','dinner','supper'] as const;
+              const totals = slots.reduce((acc, slot) => {
+                const m = day.meals?.[slot];
+                if (m?.macros) {
+                  acc.kcal += m.macros.calories || 0;
+                  acc.protein += m.macros.protein || 0;
+                  acc.carbs += m.macros.carbs || 0;
+                  acc.fat += m.macros.fat || 0;
+                }
+                return acc;
+              }, { kcal: 0, protein: 0, carbs: 0, fat: 0 });
+              const sb: any = supabase as any;
+              const { data: planRow } = await sb.from('meal_plans').insert({
+                user_id: user.id,
+                plan_date: planDate.toISOString().slice(0,10),
+                status: 'draft',
+                context: { generator: 'generate-meal-plan' },
+                source: 'planner_v1',
+                model_version: 'weekly_v1',
+                verified: true,
+                total_kcal: totals.kcal,
+                protein_g: totals.protein,
+                fat_g: totals.fat,
+                carbs_g: totals.carbs,
+              }).select('id').single();
+              const planId = planRow?.id;
+              if (!planId) continue;
+              const items = slots.flatMap((slot) => {
+                const m = day.meals?.[slot];
+                return m ? [{
+                  meal_plan_id: planId,
+                  slot,
+                  item_name: m.title,
+                  grams: 0,
+                  ml: null,
+                  state: null,
+                  kcal: m.macros?.calories || 0,
+                  protein_g: m.macros?.protein || 0,
+                  fat_g: m.macros?.fat || 0,
+                  carbs_g: m.macros?.carbs || 0,
+                  fiber_g: 0,
+                  sodium_mg: 0,
+                }] : [];
+              });
+              if (items.length) await sb.from('meal_plan_items').insert(items);
+            }
+            // auto preencher hoje
+            const d0 = data.plan[0];
+            const today = new Date().toISOString().slice(0,10);
+            for (const slot of ['breakfast','lunch','snack','dinner','supper'] as const) {
+              const m = d0.meals?.[slot];
+              if (!m) continue;
+              const sb: any = supabase as any;
+              await sb.from('nutrition_tracking').insert({
+                user_id: user.id,
+                date: today,
+                meal_type: slot === 'supper' ? 'snack' : slot,
+                foods: [{ name: m.title, quantity: 1, unit: 'porção' }],
+                total_calories: Math.round(m.macros?.calories || 0),
+                total_protein: Math.round((m.macros?.protein || 0) * 10) / 10,
+                total_carbs: Math.round((m.macros?.carbs || 0) * 10) / 10,
+                total_fat: Math.round((m.macros?.fat || 0) * 10) / 10,
+                total_fiber: 0,
+              });
+            }
+          } catch (err) {
+            console.warn('salvamento de cardápio / autofill falhou', err);
+          }
+        })();
       }
     } catch (e) {
-      toast({ title: 'Erro ao salvar', description: 'Não foi possível salvar o cardápio.', variant: 'destructive' });
+      console.error('Falha ao gerar cardápio', e);
+    } finally {
+      setPlanLoading(false);
     }
   };
 
-  const getCategory = (name: string) => {
-    const n = name.toLowerCase();
-    if (/(maçã|banana|laranja|alface|tomate|cenoura|brócolis|couve|fruta|legume|verdura)/.test(n)) return 'Hortifruti';
-    if (/(arroz|aveia|pão|granola|farinha|massa|macarrão|cereal)/.test(n)) return 'Grãos e cereais';
-    if (/(leite|iogurte|queijo|requeijão)/.test(n)) return 'Laticínios';
-    if (/(frango|carne|peixe|ovos|ovo|atum|sardinha|feijão|lentilha|grão-de-bico)/.test(n)) return 'Proteínas';
-    if (/(azeite|sal|vinagre|alho|cebola|pimenta|orégano|tempero|ervas)/.test(n)) return 'Temperos';
-    return 'Outros';
-  };
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-emerald-50 via-white to-purple-50">
+      {/* Top Banner simplificado (sem perfil/host) */}
+      <div className="bg-gradient-to-r from-emerald-500 via-green-500 to-emerald-600 rounded-2xl p-6 mb-6 text-white">
+        <h1 className="text-2xl font-bold">Ψ Sofia Nutricional</h1>
+        <p className="text-emerald-100 mt-1">Planejamento inteligente com garantia de metas</p>
+      </div>
 
-  const aggregatedShoppingList = () => {
-    if (!currentPlan) return [] as { name: string; quantity: number; unit: string; category: string }[];
-    const agg: Record<string, { name: string; quantity: number; unit: string; category: string }> = {};
-    Object.values(currentPlan.days).forEach((meals) => {
-      (['breakfast','lunch','snack','dinner'] as Array<keyof DailyMeals>).forEach((key) => {
-        const meal = meals[key] as any;
-        if (meal?.ingredients) {
-          meal.ingredients.forEach((ing: any) => {
-            const id = `${ing.name}__${ing.unit}`;
-            const category = getCategory(ing.name || '');
-            if (!agg[id]) agg[id] = { name: ing.name, quantity: 0, unit: ing.unit, category };
-            agg[id].quantity += Number(ing.quantity || 0);
-          });
-        }
-      });
-    });
-    return Object.values(agg).sort((a,b) => a.category.localeCompare(b.category) || a.name.localeCompare(b.name));
-  };
-
-  const downloadShoppingCSV = () => {
-    const items = aggregatedShoppingList();
-    if (items.length === 0) return;
-    const header = 'Categoria,Item,Quantidade,Unidade\n';
-    const rows = items.map(i => `${i.category},${i.name},${Math.round(i.quantity * shoppingMultiplier)},${i.unit}`).join('\n');
-    const csv = header + rows;
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `lista-compras-${new Date().toISOString().split('T')[0]}.csv`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
-  };
-
-  // UI helpers para cards de refeição (nível clínico)
-  const getMealIcon = (key: keyof DailyMeals): string => {
-    if (key === 'breakfast') return '🍳';
-    if (key === 'snack') return '🥪';
-    if (key === 'dinner') return '🍽️';
-    return '🥗';
-  };
-  const estimatePrepTime = (meal: any): number => {
-    const names = (meal?.ingredients || []).map((i: any) => (i.name || '').toLowerCase()).join(' ');
-    if (/arroz|frango|peixe|forno|panela|cozinhar/.test(names)) return 25;
-    if (/iogurte|fruta|banana|maç|maca|granola|aveia/.test(names)) return 10;
-    return 15;
-  };
-
-  const statusCard = (
-    <Card className="h-full bg-card/60 backdrop-blur-xl border border-border/30 shadow-card">
-      <CardHeader className="pb-2">
-        <CardTitle className="text-base flex items-center gap-2"><Calendar className="h-4 w-4" /> Status do Cardápio Atual</CardTitle>
-        <CardDescription>Plano ativo e data de criação</CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-3">
-        {currentPlan ? (
-          <div className="space-y-2">
-            <div className="flex items-center justify-between">
-              <span className="text-sm text-muted-foreground">Tipo</span>
-              <Badge variant="secondary" className="capitalize">{currentPlan.type}</Badge>
+      {/* Nutritional Summary Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+        <Card className="bg-white shadow-sm border-0">
+          <CardContent className="p-6">
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="text-sm font-medium text-gray-600">Calorias</h3>
+              <TrendingUp className="w-4 h-4 text-emerald-500" />
             </div>
-            <div className="flex items-center justify-between">
-              <span className="text-sm text-muted-foreground">Criado em</span>
-              <span className="text-sm">{new Date(currentPlan.createdAt).toLocaleString('pt-BR')}</span>
+            <div className="text-2xl font-bold text-gray-900">{dailyNutrition.totalCalories}</div>
+            <div className="text-xs text-gray-500 mt-1">Meta: {goals.calories} kcal</div>
+            <Progress value={Math.min(dailyNutrition.progress.calories, 100)} className="mt-3 h-2 bg-gray-100" />
+          </CardContent>
+        </Card>
+
+        <Card className="bg-white shadow-sm border-0">
+          <CardContent className="p-6">
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="text-sm font-medium text-gray-600">Proteínas</h3>
+              <Apple className="w-4 h-4 text-green-500" />
             </div>
-            {currentPlan.tags?.includes('Garantido') && (
-              <div className="flex items-center gap-2 text-emerald-400 text-sm font-medium">
-                <span className="inline-flex items-center px-2 py-0.5 rounded bg-emerald-500/10 border border-emerald-400/30">Garantido ✓ metas atendidas</span>
-              </div>
-            )}
-            <div className="flex gap-2">
-              <Button variant="outline" size="sm" onClick={handlePrint}><Printer className="h-4 w-4 mr-1" /> Imprimir</Button>
-              <Button variant="outline" size="sm" onClick={handleDownloadPDF}><Printer className="h-4 w-4 mr-1" /> Exportar PDF</Button>
+            <div className="text-2xl font-bold text-gray-900">{dailyNutrition.totalProtein}g</div>
+            <div className="text-xs text-gray-500 mt-1">Meta: {goals.protein}g</div>
+            <Progress value={Math.min(dailyNutrition.progress.protein, 100)} className="mt-3 h-2 bg-gray-100" />
+          </CardContent>
+        </Card>
+
+        <Card className="bg-white shadow-sm border-0">
+          <CardContent className="p-6">
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="text-sm font-medium text-gray-600">Carboidratos</h3>
+              <BarChart3 className="w-4 h-4 text-yellow-500" />
             </div>
-          </div>
-        ) : (
-          <div className="text-sm text-muted-foreground">Nenhum cardápio ativo.</div>
-        )}
+            <div className="text-2xl font-bold text-gray-900">{dailyNutrition.totalCarbs}g</div>
+            <div className="text-xs text-gray-500 mt-1">Meta: {goals.carbs}g</div>
+            <Progress value={Math.min(dailyNutrition.progress.carbs, 100)} className="mt-3 h-2 bg-gray-100" />
       </CardContent>
     </Card>
-  );
 
-  const scoreCard = (
-    <Card className="h-full bg-card/60 backdrop-blur-xl border border-border/30 shadow-card">
-      <CardHeader className="pb-2">
-        <CardTitle className="text-base flex items-center gap-2"><Star className="h-4 w-4" /> Score Nutricional</CardTitle>
-        <CardDescription>Equilíbrio e variedade do cardápio</CardDescription>
-      </CardHeader>
-      <CardContent>
-        <div className="flex items-center gap-3">
-          <div className="text-3xl font-bold">{currentPlan?.score ?? 0}</div>
-          <div className="flex-1 h-2 rounded bg-muted overflow-hidden">
-            <div
-              className="h-2"
-              style={{
-                width: `${currentPlan?.score ?? 0}%`,
-                backgroundColor: (currentPlan?.score ?? 0) >= 70 ? '#10B981' : (currentPlan?.score ?? 0) >= 40 ? '#F59E0B' : '#EF4444'
-              }}
-            />
+        <Card className="bg-white shadow-sm border-0">
+          <CardContent className="p-6">
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="text-sm font-medium text-gray-600">Gorduras</h3>
+              <Target className="w-4 h-4 text-red-500" />
           </div>
-        </div>
+            <div className="text-2xl font-bold text-gray-900">{dailyNutrition.totalFat}g</div>
+            <div className="text-xs text-gray-500 mt-1">Meta: {goals.fat}g</div>
+            <Progress value={Math.min(dailyNutrition.progress.fat, 100)} className="mt-3 h-2 bg-gray-100" />
       </CardContent>
     </Card>
-  );
+      </div>
 
-  const lastChatCard = (
-    <Card className="h-full bg-card/60 backdrop-blur-xl border border-border/30 shadow-card">
-      <CardHeader className="pb-2">
-        <CardTitle className="text-base flex items-center gap-2"><MessageSquare className="h-4 w-4" /> Última Conversa com a Sofia</CardTitle>
-        <CardDescription>Interações sobre alimentação</CardDescription>
+      {/* Abas internas */}
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
+        <TabsList className="grid w-full grid-cols-5 bg-white shadow-sm">
+          <TabsTrigger value="tracker" className="data-[state=active]:bg-gradient-to-r data-[state=active]:from-emerald-500 data-[state=active]:to-purple-600 data-[state=active]:text-white">Rastreador</TabsTrigger>
+          <TabsTrigger value="menu" className="data-[state=active]:bg-gradient-to-r data-[state=active]:from-emerald-500 data-[state=active]:to-purple-600 data-[state=active]:text-white">Cardápio</TabsTrigger>
+          <TabsTrigger value="stats" className="data-[state=active]:bg-gradient-to-r data-[state=active]:from-emerald-500 data-[state=active]:to-purple-600 data-[state=active]:text-white">Estatísticas</TabsTrigger>
+          <TabsTrigger value="insights" className="data-[state=active]:bg-gradient-to-r data-[state=active]:from-emerald-500 data-[state=active]:to-purple-600 data-[state=active]:text-white">Insights</TabsTrigger>
+          <TabsTrigger value="goals" className="data-[state=active]:bg-gradient-to-r data-[state=active]:from-emerald-500 data-[state=active]:to-purple-600 data-[state=active]:text-white">Metas</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="menu" className="space-y-4">
+          <Card className="bg-white shadow-sm border-0">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                Cardápio Semanal
+              </CardTitle>
       </CardHeader>
       <CardContent>
-        <div className="text-sm">{lastSofiaInteraction ? new Date(lastSofiaInteraction).toLocaleString('pt-BR') : 'Sem interações recentes.'}</div>
-        <div className="mt-3">
-          <div className="flex items-center gap-2">
-            <Button size="sm" variant="default" onClick={() => setIntakeOpen(true)}><RefreshCw className="h-4 w-4 mr-1" /> Nova Sugestão</Button>
-            <Sheet open={chatOpen} onOpenChange={setChatOpen}>
-              <SheetTrigger asChild>
-                <Button size="sm" variant="outline">Abrir Chat</Button>
-              </SheetTrigger>
-              <SheetContent className="w-full sm:max-w-lg">
-                <SheetHeader>
-                  <SheetTitle>Conversa com a Sofia</SheetTitle>
-                </SheetHeader>
-                <div className="mt-4">
-                  <SofiaChat user={user} />
+              <div className="flex flex-col gap-3 mb-4">
+                <div className="flex items-center justify-between">
+                  <div className="text-sm text-gray-500">Gera 7 dias respeitando suas metas</div>
+                  <div className="flex gap-2">
+                    <Button variant="outline" onClick={()=> openWeeklyMealPlanHTML(plan, { userName: '', targetCalories: goals.calories, days: plan?.length })} disabled={!plan || plan.length===0}>
+                      Abrir Cardápio
+                    </Button>
+                    <Button variant="outline" onClick={()=> openWeeklyMealPlanClinicalHTML(plan, { userName: '', targetCalories: goals.calories })} disabled={!plan || plan.length===0}>
+                      Abrir Cardápio (Clínico)
+                    </Button>
+                    <Button onClick={() => setWizardOpen(true)} disabled={planLoading} className="bg-gradient-to-r from-emerald-500 to-purple-600 text-white">
+                      {planLoading ? 'Gerando...' : 'Gerar Cardápio'}
+                </Button>
+                  </div>
                 </div>
-              </SheetContent>
-            </Sheet>
+                <div className="flex flex-wrap items-center gap-4 text-sm">
+                  <div className="flex items-center gap-2">
+                    <Checkbox id="m-breakfast" checked={mealPrefs.breakfast} onCheckedChange={(v) => setMealPrefs(p=>({...p, breakfast: !!v}))} />
+                    <label htmlFor="m-breakfast">Café da manhã</label>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Checkbox id="m-lunch" checked={mealPrefs.lunch} onCheckedChange={(v) => setMealPrefs(p=>({...p, lunch: !!v}))} />
+                    <label htmlFor="m-lunch">Almoço</label>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Checkbox id="m-snack" checked={mealPrefs.snack} onCheckedChange={(v) => setMealPrefs(p=>({...p, snack: !!v}))} />
+                    <label htmlFor="m-snack">Lanche</label>
           </div>
+                  <div className="flex items-center gap-2">
+                    <Checkbox id="m-dinner" checked={mealPrefs.dinner} onCheckedChange={(v) => setMealPrefs(p=>({...p, dinner: !!v}))} />
+                    <label htmlFor="m-dinner">Jantar</label>
         </div>
-      </CardContent>
-    </Card>
-  );
-
-  const SuggestionsSection = () => (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h3 className="text-lg font-semibold">Sugestões Atuais</h3>
-        <div className="flex gap-2">
-          <Button variant="outline" size="sm" onClick={handleOpenShoppingList}><ShoppingCart className="h-4 w-4 mr-1" /> Ver Lista de Compras</Button>
-           <Button variant="outline" size="sm" onClick={handleDownloadPDF}><Printer className="h-4 w-4 mr-1" /> Imprimir Cardápio</Button>
-          <Button variant="default" size="sm" onClick={handleSavePlan} disabled={!currentPlan}>Salvar no Perfil</Button>
+                  <div className="flex items-center gap-2">
+                    <Checkbox id="m-supper" checked={mealPrefs.supper} onCheckedChange={(v) => setMealPrefs(p=>({...p, supper: !!v}))} />
+                    <label htmlFor="m-supper">Ceia</label>
         </div>
       </div>
-      <div ref={planRef} className="space-y-3">
-        {currentPlan ? (
-          Object.entries(currentPlan.days).map(([day, meals]) => (
-            <Card key={day}>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-base capitalize flex items-center gap-2"><Utensils className="h-4 w-4" /> {day}</CardTitle>
-              </CardHeader>
-              <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                {(['breakfast','lunch','snack','dinner'] as Array<keyof DailyMeals>).map((mealKey) => {
-                  const meal = meals[mealKey];
-                  if (!meal) return (
-                    <div key={mealKey} className="p-3 rounded border border-dashed text-sm text-muted-foreground">
-                      {mealKey === 'breakfast' && 'Café da manhã não definido'}
-                      {mealKey === 'lunch' && 'Almoço não definido'}
-                      {mealKey === 'snack' && 'Lanche não definido'}
-                      {mealKey === 'dinner' && 'Jantar não definido'}
                     </div>
-                  );
-                  return (
-                    <Card key={mealKey} className="bg-card border border-border/50 shadow-card">
-                      <CardHeader className="py-3">
-                        <CardTitle className="text-sm font-semibold flex items-center gap-2">
-                          <span className="text-lg">{getMealIcon(mealKey)}</span>
-                          {mealKey === 'breakfast' && 'Café da Manhã'}
-                          {mealKey === 'lunch' && 'Almoço'}
-                          {mealKey === 'snack' && 'Lanche'}
-                          {mealKey === 'dinner' && 'Jantar'}
-                        </CardTitle>
-                      </CardHeader>
-                      <CardContent className="space-y-3">
-                        <div className="text-sm font-medium">{meal.name}</div>
-                        {'calories_kcal' in meal && (
-                          <div className="text-xs text-emerald-700 font-medium">{(meal as any).calories_kcal} kcal</div>
-                        )}
-                        {/* Chips de macro e tempo */}
-                        {(() => {
-                          const n = computeMeal(meal);
-                          const prep = estimatePrepTime(meal);
-                          return (
-                            <div className="flex flex-wrap gap-2 text-[11px]">
-                              <span className="px-2 py-1 rounded-full bg-green-50 text-green-700 border border-green-200">Prot {Math.round(n.protein_g)} g</span>
-                              <span className="px-2 py-1 rounded-full bg-blue-50 text-blue-700 border border-blue-200">Carb {Math.round(n.carbs_g)} g</span>
-                              <span className="px-2 py-1 rounded-full bg-amber-50 text-amber-700 border border-amber-200">Gord {Math.round(n.fat_g)} g</span>
-                              <span className="px-2 py-1 rounded-full bg-slate-50 text-slate-700 border border-slate-200">{prep} min</span>
-                            </div>
-                          );
-                        })()}
-                        {(meal as any).homemade_measure && (
-                          <div className="text-xs text-muted-foreground">Medida caseira: {(meal as any).homemade_measure}</div>
-                        )}
-                        <div className="text-xs text-muted-foreground">{(meal as any).ingredients?.map((ing: any) => `${ing.name} ${ing.quantity}${ing.unit}`).join(', ')}</div>
-                        {(meal as any).notes && (
-                          <div className="text-xs text-muted-foreground">Obs.: {(meal as any).notes}</div>
-                        )}
-                        {(meal as any).options?.length ? (
-                          <div className="pt-1">
-                            <div className="text-xs font-semibold">Opções rápidas</div>
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-1 mt-1">
-                              {(meal as any).options.slice(0,4).map((opt: any, idx: number) => (
-                                <div key={idx} className="text-xs border rounded px-2 py-1 bg-background/60">
-                                  <span className="font-medium capitalize">{opt.category}</span>: {opt.name} {opt.quantity_g ? `• ${opt.quantity_g}g` : ''} {opt.homemade_measure ? `• ${opt.homemade_measure}` : ''}
+              {plan.length === 0 ? (
+                <div className="text-sm text-gray-500">Nenhum cardápio gerado ainda.</div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="text-left text-gray-500">
+                        <th className="p-2">Dia</th>
+                        <th className="p-2">Café</th>
+                        <th className="p-2">Almoço</th>
+                        <th className="p-2">Lanche</th>
+                        <th className="p-2">Jantar</th>
+                        <th className="p-2">Ceia</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {plan.map((d, idx) => (
+                        <tr key={idx} className="border-t">
+                          <td className="p-2 font-medium">{d.day}</td>
+                          {['breakfast','lunch','snack','dinner','supper'].map((slot) => (
+                            <td key={slot} className="p-2 align-top">
+                              {d.meals[slot] ? (
+                                <div>
+                                  <div className="font-medium">{d.meals[slot].title}</div>
+                                  <div className="text-xs text-gray-500">{Math.round(d.meals[slot].macros.calories)} kcal • {Math.round(d.meals[slot].macros.protein)}g P</div>
                                 </div>
-                              ))}
-                            </div>
-                          </div>
-                        ) : null}
-                        <div className="pt-2 flex gap-2">
-                          <Button
-                            variant="secondary"
-                            size="sm"
-                            onClick={() => toast({ title: 'Ajuste de refeição', description: 'Fluxo de ajuste será habilitado após confirmação.' })}
-                          >Ajustar Refeição</Button>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => {
-                              const swaps = (window as any).__sofia_swap_suggestions;
-                              if (!swaps) { toast({ title: 'Sem opções agora', description: 'Gere um plano para ver sugestões.' }); return; }
-                              setSwapMealKey(mealKey);
-                              setSwapOpen(true);
-                            }}
-                          >Trocar por similar</Button>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  );
-                })}
-              </CardContent>
-            </Card>
-          ))
-        ) : (
-          <Card>
-            <CardContent className="py-6 text-sm text-muted-foreground">
-              Nenhum cardápio atual. Clique em “Nova Sugestão” para gerar um plano personalizado.
-              <div className="pt-2">
-                <Button size="sm" onClick={() => setIntakeOpen(true)}><RefreshCw className="h-4 w-4 mr-1" /> Nova Sugestão</Button>
+                              ) : (
+                                <span className="text-gray-400">—</span>
+                              )}
+                            </td>
+                          ))}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+              {/* Histórico de cardápios salvos */}
+              <div className="mt-6">
+                <div className="text-sm font-medium mb-2">Histórico de cardápios salvos</div>
+                {savedPlans.length === 0 ? (
+                  <div className="text-sm text-muted-foreground">Nenhum cardápio salvo ainda.</div>
+                ) : (
+                  <ul className="text-sm space-y-1">
+                    {savedPlans.map((p) => (
+                      <li key={p.id} className="flex items-center justify-between border-b py-1">
+                        <span>{new Date(p.plan_date).toLocaleDateString('pt-BR')}</span>
+                        <span className="text-muted-foreground">{p.total_kcal} kcal</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
               </div>
             </CardContent>
           </Card>
-        )}
-      </div>
-    </div>
-  );
-
-  const HistorySection = () => (
-    <div className="space-y-3">
-      <h3 className="text-lg font-semibold">Histórico de Cardápios</h3>
-      {history.length === 0 ? (
-        <Card><CardContent className="py-6 text-sm text-muted-foreground">Sem histórico por enquanto.</CardContent></Card>
-      ) : (
-        <div className="space-y-2">
-          {history.map(item => (
-            <Card key={item.id} className="">
-              <CardContent className="py-3 flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4">
-                <div className="flex-1">
-                  <div className="text-sm font-medium">{new Date(item.createdAt).toLocaleString('pt-BR')}</div>
-                  <div className="text-xs text-muted-foreground capitalize">{item.type} • {(item.tags || []).join(', ') || 'Sem tags'}</div>
+          <Dialog open={wizardOpen} onOpenChange={setWizardOpen}>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Preferências rápidas</DialogTitle>
+              </DialogHeader>
+              <div className="space-y-4">
+                <div className="grid grid-cols-3 gap-3 text-sm">
+                  <div className="space-y-1 col-span-1">
+                    <label className="text-xs text-muted-foreground">Dias</label>
+                    <Input type="number" min={1} max={14} value={daysCount} onChange={(e)=>setDaysCount(Math.min(Math.max(Number(e.target.value)||7,1),14))} />
+                  </div>
+                  <div className="space-y-1 col-span-1">
+                    <label className="text-xs text-muted-foreground">Dieta</label>
+                    <Select onValueChange={(v)=>setDiet(v)} value={diet}>
+                      <SelectTrigger><SelectValue placeholder="Livre" /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="keto">Keto</SelectItem>
+                        <SelectItem value="vegetarian">Vegetariana</SelectItem>
+                        <SelectItem value="vegan">Vegana</SelectItem>
+                        <SelectItem value="gluten-free">Sem glúten</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-1 col-span-1">
+                    <label className="text-xs text-muted-foreground">Tempo máx. preparo (min)</label>
+                    <Input type="number" value={maxPrep} onChange={(e)=>setMaxPrep(Number(e.target.value)||0)} />
+                            </div>
+                          </div>
+                <div className="space-y-1">
+                  <label className="text-xs text-muted-foreground">Gostos (ingredientes, separados por vírgula)</label>
+                  <Input value={likes} onChange={(e)=>setLikes(e.target.value)} placeholder="frango, banana, salada" />
                 </div>
-                <div className="flex gap-2">
-                  <Button variant="outline" size="sm">Visualizar</Button>
-                  <Button variant="outline" size="sm">Reaplicar</Button>
-                  <Button variant="outline" size="sm">Editar</Button>
-                  <Button variant="outline" size="sm" onClick={handleDownloadPDF}><Printer className="h-4 w-4 mr-1" /> Imprimir</Button>
+                <div className="space-y-1">
+                  <label className="text-xs text-muted-foreground">Desgostos (ingredientes)</label>
+                  <Input value={dislikes} onChange={(e)=>setDislikes(e.target.value)} placeholder="pimenta, azeitona" />
                 </div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-      )}
-    </div>
-  );
+                <div className="space-y-1">
+                  <label className="text-xs text-muted-foreground">Alergias</label>
+                  <Input value={allergies} onChange={(e)=>setAllergies(e.target.value)} placeholder="amendoim, lactose" />
+                </div>
+                <div className="flex justify-end gap-2">
+                  <Button variant="outline" onClick={()=>setWizardOpen(false)}>Cancelar</Button>
+                  <Button onClick={async ()=>{ setWizardOpen(false); await generatePlan(); }}>Confirmar</Button>
+                        </div>
+              </div>
+            </DialogContent>
+          </Dialog>
+        </TabsContent>
 
-  const TrendsSection = () => (
-    <div className="space-y-3">
-      <h3 className="text-lg font-semibold flex items-center gap-2"><TrendingUp className="h-4 w-4" /> Tendências e Acompanhamento</h3>
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
-        <Card>
-          <CardHeader className="pb-2"><CardTitle className="text-base">Frequência de Alimentos</CardTitle></CardHeader>
-          <CardContent className="text-sm text-muted-foreground">Gráfico será exibido aqui.</CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2"><CardTitle className="text-base">Rotação de Ingredientes</CardTitle></CardHeader>
-          <CardContent className="text-sm text-muted-foreground">Indicador visual será exibido aqui.</CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2"><CardTitle className="text-base">Evolução do Score</CardTitle></CardHeader>
-          <CardContent className="text-sm text-muted-foreground">Linha do tempo será exibida aqui.</CardContent>
-        </Card>
-      </div>
-    </div>
-  );
+        <TabsContent value="tracker">
+          <Card className="bg-white shadow-sm border-0">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <ChefHat className="w-5 h-5 text-emerald-600" />
+                Rastreador de Nutrição
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <NutritionTracker />
+            </CardContent>
+          </Card>
+        </TabsContent>
 
-  const PreferencesSection = () => (
-    <div className="space-y-4">
-      <h3 className="text-lg font-semibold">Preferências Alimentares</h3>
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div className="space-y-3">
-          <div className="space-y-1">
-            <Label htmlFor="alergias">Alergias / Intolerâncias</Label>
-            <Textarea id="alergias" placeholder="Ex.: lactose, glúten" value={preferences.alergias} onChange={(e) => setPreferences(p => ({ ...p, alergias: e.target.value }))} />
-          </div>
-          <div className="space-y-1">
-            <Label htmlFor="restricoes">Restrições religiosas</Label>
-            <Textarea id="restricoes" placeholder="Ex.: kosher, halal" value={preferences.restricoes} onChange={(e) => setPreferences(p => ({ ...p, restricoes: e.target.value }))} />
-          </div>
-          <div className="space-y-1">
-            <Label htmlFor="dislikes">Alimentos que não gosta</Label>
-            <Textarea id="dislikes" placeholder="Ex.: coentro, pimentão" value={preferences.dislikes} onChange={(e) => setPreferences(p => ({ ...p, dislikes: e.target.value }))} />
-          </div>
-        </div>
-        <div className="space-y-3">
-          <div className="space-y-1">
-            <Label htmlFor="orcamento">Orçamento</Label>
-            <div className="flex gap-2">
-              {(['baixo','médio','alto'] as BudgetLevel[]).map(level => (
-                <Button key={level} type="button" variant={preferences.orcamento === level ? 'default' : 'outline'} size="sm" onClick={() => setPreferences(p => ({ ...p, orcamento: level }))} className="capitalize">{level}</Button>
-              ))}
-            </div>
-          </div>
-          <div className="space-y-1">
-            <Label htmlFor="tempo">Tempo máximo de preparo (min)</Label>
-            <Input id="tempo" type="number" min={5} max={240} value={preferences.tempoPreparoMin} onChange={(e) => setPreferences(p => ({ ...p, tempoPreparoMin: Number(e.target.value || 0) }))} />
-          </div>
-          <div className="space-y-1">
-            <Label htmlFor="utensilios">Utensílios disponíveis</Label>
-            <Input id="utensilios" placeholder="Ex.: airfryer, micro-ondas, panela de pressão" value={preferences.utensilios} onChange={(e) => setPreferences(p => ({ ...p, utensilios: e.target.value }))} />
-          </div>
-          <div className="flex gap-2 pt-1">
-            <Button onClick={handleSavePreferences}>Salvar Preferências</Button>
-            <Button variant="outline" onClick={handleResetPreferences}>Redefinir Preferências</Button>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
-          <p className="text-muted-foreground">Carregando...</p>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="min-h-screen bg-background">
-      <ConfettiAnimation trigger={confettiTrigger} />
-      <div className="mx-auto max-w-7xl p-4 sm:p-6 space-y-4">
-        {/* Hero Tech Premium */}
-        <div className="relative overflow-hidden rounded-2xl border border-border/50 bg-card shadow-card">
-          <div className="absolute inset-0 pointer-events-none" style={{ background: 'radial-gradient(600px 200px at 20% -20%, rgba(34,197,94,0.12), transparent), radial-gradient(500px 200px at 80% 0%, rgba(14,165,233,0.10), transparent)' }} />
-          <div className="relative p-5 sm:p-6 flex items-center justify-between">
-            <div>
-              <h1 className="text-2xl sm:text-3xl font-semibold flex items-center gap-2 text-foreground">
-                <Utensils className="h-6 w-6 text-green-600" /> Sofia Nutricional
-              </h1>
-              <p className="text-sm text-muted-foreground">Planejamento inteligente com garantia de metas</p>
-            </div>
-            <div className="flex items-center gap-2">
-              {currentPlan?.tags?.includes('Garantido') && (
-                <span className="px-3 py-1 rounded-full bg-emerald-500/15 text-emerald-300 border border-emerald-400/30 text-xs">Garantido ✓</span>
-              )}
-              <Button onClick={() => setIntakeOpen(true)} className="bg-gradient-primary border border-primary/30 shadow-elegant">Gerar agora</Button>
-            </div>
-          </div>
-        </div>
-
-        {/* Painel Resumo */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-          {/* Métricas Premium */}
-          <div className="grid grid-cols-2 gap-3 md:col-span-2">
-            {(() => {
-              const totals = computeDailyTotals(currentPlan);
-              return (
-                <>
-                  <MetricCard label="Calorias" value={Math.round(totals.kcal)} target={targetCalories} unit="" color="#22D3EE" />
-                  <MetricCard label="Proteínas" value={Math.round(totals.protein_g)} unit="g" color="#7C3AED" />
-                  <MetricCard label="Carboidratos" value={Math.round(totals.carbs_g)} unit="g" color="#A78BFA" />
-                  <MetricCard label="Gorduras" value={Math.round(totals.fat_g)} unit="g" color="#22D3EE" />
-                </>
-              );
-            })()}
-          </div>
-          {lastChatCard}
-        </div>
-
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-          <div className="lg:col-span-2 space-y-4">
-            <Tabs defaultValue="sugestoes" className="w-full">
-              <TabsList className="grid grid-cols-5 gap-2">
-                <TabsTrigger value="sugestoes">Sugestões Atuais</TabsTrigger>
-                <TabsTrigger value="historico">Histórico</TabsTrigger>
-                <TabsTrigger value="tendencias">Tendências</TabsTrigger>
-                <TabsTrigger value="preferencias">Preferências</TabsTrigger>
-                <TabsTrigger value="impressao">Impressão</TabsTrigger>
-              </TabsList>
-              <TabsContent value="sugestoes"><SuggestionsSection /></TabsContent>
-              <TabsContent value="historico"><HistorySection /></TabsContent>
-              <TabsContent value="tendencias"><TrendsSection /></TabsContent>
-              <TabsContent value="preferencias"><PreferencesSection /></TabsContent>
-              <TabsContent value="impressao">
-                <Card>
-                  <CardHeader className="pb-2"><CardTitle className="text-base flex items-center gap-2"><Printer className="h-4 w-4" /> Imprimir Cardápio</CardTitle></CardHeader>
-                  <CardContent className="space-y-2">
-                    <p className="text-sm text-muted-foreground">Revise seu cardápio e utilize os botões para imprimir ou exportar PDF.</p>
-                    <div className="flex gap-2">
-                      <Button variant="default" onClick={handlePrint}><Printer className="h-4 w-4 mr-1" /> Imprimir</Button>
-                      <Button variant="outline" onClick={handleDownloadPDF}><Printer className="h-4 w-4 mr-1" /> Exportar PDF</Button>
-                      <Button variant="outline" onClick={handleOpenHTML}>Abrir HTML</Button>
-                      <Button variant="outline" onClick={handleDownloadHTML}>Baixar HTML</Button>
-                    </div>
-                  </CardContent>
-                </Card>
-              </TabsContent>
-            </Tabs>
-          </div>
-          {/* Insights do Dr. Vital */}
-          <div className="space-y-3">
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-base flex items-center gap-2"><TrendingUp className="h-4 w-4" /> Insights do Dr. Vital</CardTitle>
-                <CardDescription>Aderência, melhorias e destaques</CardDescription>
-              </CardHeader>
-              <CardContent className="text-sm text-muted-foreground">
-                Em breve: integração com relatórios médicos e aderência ao plano nutricional.
-              </CardContent>
-            </Card>
-          </div>
-        </div>
-        {/* Modal para nova sugestão com formulário e chat compacto */}
-        <SofiaMealSuggestionModal
-          open={suggestionOpen}
-          onOpenChange={setSuggestionOpen}
-          user={user}
-          targetCaloriesKcal={targetCalories}
-          intakeAnswers={lastIntake}
-          onPlanGenerated={async (plan: MealPlanGenerated) => {
-            const today = plan.days['hoje'] || plan.days[Object.keys(plan.days)[0]];
-            const toDailyMeals: DailyMeals = {
-              breakfast: today?.breakfast,
-              lunch: today?.lunch,
-              snack: today?.afternoon_snack,
-              dinner: today?.dinner,
-            };
-            setCurrentPlan({
-              type: plan.type,
-              createdAt: new Date().toISOString(),
-              score: plan.score,
-              tags: plan.tags,
-              days: { hoje: toDailyMeals },
-            });
-            setLastSofiaInteraction(new Date().toISOString());
-            // Persistência local (v2). Integração remota será conectada ao schema meal_plans.
-            pushToHistory({
-              type: plan.type,
-              createdAt: new Date().toISOString(),
-              score: plan.score,
-              tags: plan.tags,
-              days: { hoje: toDailyMeals },
-            });
-          }}
-        />
-
-        {/* Dialog de intake antes de gerar */}
-        <Dialog open={intakeOpen} onOpenChange={setIntakeOpen}>
-          <DialogContent className="sm:max-w-xl">
-            <DialogHeader>
-              <DialogTitle>Converse com a Sofia</DialogTitle>
-            </DialogHeader>
-            <SofiaMealQnAChat
-              targetCaloriesKcal={targetCalories}
-              onComplete={(qna: MealQnAResult) => {
-                setLastIntake({
-                  objetivo: 'Plano diário',
-                  alergias: qna.breakfast.restrictions,
-                  restricoesReligiosas: '',
-                  preferencias: `${qna.breakfast.description}; ${qna.lunch.description}; ${qna.dinner.description}`,
-                  naoGosta: '',
-                  rotinaHorarios: '',
-                  orcamento: 'médio',
-                  tempoPreparoMin: 30,
-                  utensilios: ''
-                });
-                setIntakeOpen(false);
-                // preferir planner determinístico; se falhar, cai para modal de sugestão
-                generatePlanWithPlanner({
-                  objetivo: 'Plano diário',
-                  alergias: qna.breakfast.restrictions,
-                  restricoesReligiosas: '',
-                  preferencias: `${qna.breakfast.description}; ${qna.lunch.description}; ${qna.dinner.description}`,
-                  naoGosta: '',
-                  rotinaHorarios: '',
-                  orcamento: 'médio',
-                  tempoPreparoMin: 30,
-                  utensilios: ''
-                });
-              }}
-            />
-          </DialogContent>
-        </Dialog>
-        {/* Modal de Substituições Inteligentes */}
-        <MealSwapModal
-          open={swapOpen}
-          onOpenChange={setSwapOpen}
-          meal={swapMealKey ? (currentPlan?.days['hoje'] as any)?.[swapMealKey] : undefined}
-          swapSuggestions={(window as any).__sofia_swap_suggestions || null}
-          targetCaloriesKcal={targetCalories}
-          currentDayTotals={(() => computeDailyTotals(currentPlan))()}
-          onApply={(updated) => {
-            if (!currentPlan || !swapMealKey) return;
-            const copy: MealPlan = JSON.parse(JSON.stringify(currentPlan));
-            (copy.days['hoje'] as any)[swapMealKey] = updated as any;
-            setCurrentPlan(copy);
-            toast({ title: 'Substituição aplicada', description: 'Mantivemos as calorias aproximadas.' });
-          }}
-        />
-        {/* Modal Lista de Compras */}
-        <Dialog open={shoppingOpen} onOpenChange={setShoppingOpen}>
-          <DialogContent className="max-w-2xl">
-            <DialogHeader>
-              <DialogTitle>Lista de Compras (1 semana)</DialogTitle>
-            </DialogHeader>
-            <div className="space-y-2 max-h-[60vh] overflow-y-auto">
-              <div className="flex items-center justify-between pb-2">
-                <div className="text-sm text-muted-foreground">Multiplicar por:</div>
-                <div className="flex gap-2">
-                  {[1,2,3].map(m => (
-                    <Button key={m} variant={shoppingMultiplier === m ? 'default' : 'outline'} size="sm" onClick={() => setShoppingMultiplier(m)}>{m}×</Button>
-                  ))}
+        <TabsContent value="stats" className="space-y-6">
+          <Card className="bg-white shadow-sm border-0">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <TrendingUp className="w-5 h-5 text-emerald-600" />
+                Estatísticas da Semana
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-6">
+                <NutritionWeeklyCharts data={weeklySeries} />
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="p-3 bg-emerald-50 rounded-lg flex items-center justify-between">
+                    <span className="text-sm">Dias Ativos</span>
+                    <Badge variant="secondary">{stats.daysTracked}/7</Badge>
+                  </div>
+                  <div className="p-3 bg-purple-50 rounded-lg flex items-center justify-between">
+                    <span className="text-sm">Score Médio</span>
+                    <Badge variant="secondary">{Math.round(stats.goalAchievementRate)}/100</Badge>
+                  </div>
+                  <div className="p-3 bg-blue-50 rounded-lg flex items-center justify-between">
+                    <span className="text-sm">Refeições Registradas</span>
+                    <Badge variant="secondary">{meals.length}</Badge>
+                  </div>
                 </div>
               </div>
-              {aggregatedShoppingList().length === 0 ? (
-                <div className="text-sm text-muted-foreground">Gere e salve um cardápio para ver a lista de compras.</div>
-              ) : (
-                Object.entries(aggregatedShoppingList().reduce((acc: any, item) => {
-                  (acc[item.category] ||= []).push(item);
-                  return acc;
-                }, {} as Record<string, any[]>)).map(([cat, items]) => (
-                  <div key={cat} className="border rounded-md">
-                    <div className="px-3 py-2 text-xs font-semibold bg-muted/40">{cat}</div>
-                    <div className="divide-y">
-                      {items.map((item, idx) => (
-                        <div key={idx} className="flex items-center justify-between p-2 text-sm">
-                          <div className="font-medium">{item.name}</div>
-                          <div className="text-muted-foreground">{Math.round(item.quantity * shoppingMultiplier)} {item.unit}</div>
-                        </div>
-                      ))}
-                    </div>
+            </CardContent>
+            </Card>
+        </TabsContent>
+
+        <TabsContent value="insights" className="space-y-6">
+          <DrVitalNutritionInsights />
+        </TabsContent>
+
+        <TabsContent value="goals" className="space-y-6">
+          <Card className="bg-white shadow-sm border-0">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Target className="w-5 h-5 text-emerald-600" />
+                Metas Nutricionais
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+    <div className="space-y-4">
+                  <div>
+                    <Label htmlFor="calories">Calorias Diárias</Label>
+                    <Input id="calories" type="number" value={goals.calories} onChange={(e) => updateGoals({ ...goals, calories: Number(e.target.value) })} className="mt-1" />
                   </div>
-                ))
-              )}
+                  <div>
+                    <Label htmlFor="protein">Proteínas (g)</Label>
+                    <Input id="protein" type="number" value={goals.protein} onChange={(e) => updateGoals({ ...goals, protein: Number(e.target.value) })} className="mt-1" />
+          </div>
+                  <div>
+                    <Label htmlFor="carbs">Carboidratos (g)</Label>
+                    <Input id="carbs" type="number" value={goals.carbs} onChange={(e) => updateGoals({ ...goals, carbs: Number(e.target.value) })} className="mt-1" />
+          </div>
+                  <div>
+                    <Label htmlFor="fat">Gorduras (g)</Label>
+                    <Input id="fat" type="number" value={goals.fat} onChange={(e) => updateGoals({ ...goals, fat: Number(e.target.value) })} className="mt-1" />
+          </div>
+        </div>
+        <div className="space-y-3">
+                  <div>
+                    <div className="flex justify-between text-sm mb-1">
+                      <span>Calorias</span>
+                      <span>{Math.round(dailyNutrition.totalCalories)} / {goals.calories}</span>
             </div>
-            <div className="flex justify-end gap-2">
-              <Button variant="outline" onClick={() => window.print()}>Imprimir</Button>
-              <Button variant="default" onClick={downloadShoppingCSV}>Baixar CSV</Button>
-              <Button variant="default" onClick={async () => {
-                const items = aggregatedShoppingList().map(i => ({ ...i, quantity: i.quantity * shoppingMultiplier }));
-                await exportShoppingListToPDF(items, {
-                  multiplier: shoppingMultiplier,
-                  userName: user?.user_metadata?.full_name || undefined,
-                  dateLabel: new Date().toLocaleDateString('pt-BR')
-                });
-              }}>Baixar PDF</Button>
-            </div>
-          </DialogContent>
-        </Dialog>
+                    <Progress value={(dailyNutrition.totalCalories / goals.calories) * 100} className="h-2" />
+          </div>
+                  <div>
+                    <div className="flex justify-between text-sm mb-1">
+                      <span>Proteínas</span>
+                      <span>{Math.round(dailyNutrition.totalProtein)}g / {goals.protein}g</span>
+          </div>
+                    <Progress value={(dailyNutrition.totalProtein / goals.protein) * 100} className="h-2" />
+          </div>
+                  <div>
+                    <div className="flex justify-between text-sm mb-1">
+                      <span>Carboidratos</span>
+                      <span>{Math.round(dailyNutrition.totalCarbs)}g / {goals.carbs}g</span>
+          </div>
+                    <Progress value={(dailyNutrition.totalCarbs / goals.carbs) * 100} className="h-2" />
       </div>
+            <div>
+                    <div className="flex justify-between text-sm mb-1">
+                      <span>Gorduras</span>
+                      <span>{Math.round(dailyNutrition.totalFat)}g / {goals.fat}g</span>
+            </div>
+                    <Progress value={(dailyNutrition.totalFat / goals.fat) * 100} className="h-2" />
+            </div>
+          </div>
+        </div>
+
+              <div className="mt-8 grid grid-cols-1 md:grid-cols-2 gap-6">
+                <Card className="bg-white shadow-sm border-0">
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <TrendingUp className="w-5 h-5 text-emerald-600" />
+                      Metabolismo do Usuário
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-2 text-sm">
+                      <div className="flex justify-between">
+                        <span>Metabolismo Basal (BMR)</span>
+                        <span className="font-semibold">{bmr ? `${bmr} kcal/dia` : '—'}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>Gasto Diário Estimado (TDEE)</span>
+                        <span className="font-semibold">{tdee ? `${tdee} kcal/dia` : '—'}</span>
+          </div>
+                      <div className="flex justify-between text-muted-foreground">
+                        <span>Última pesagem</span>
+                        <span>{latest?.measurement_date ? new Date(latest.measurement_date).toLocaleDateString() : '—'}</span>
+        </div>
+                    </div>
+                    {!latest && (
+                      <p className="text-xs text-muted-foreground mt-3">Faça uma pesagem para calcular automaticamente seu metabolismo.</p>
+                    )}
+                  </CardContent>
+                </Card>
+
+                <Card className="bg-white shadow-sm border-0">
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <Calendar className="w-5 h-5 text-emerald-600" />
+                      Dados Físicos
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="grid grid-cols-2 gap-3 text-sm">
+                      <div className="flex justify-between"><span>Altura</span><span className="font-medium">{physicalData?.altura_cm ? `${physicalData.altura_cm} cm` : '—'}</span></div>
+                      <div className="flex justify-between"><span>Idade</span><span className="font-medium">{physicalData?.idade ?? '—'}</span></div>
+                      <div className="flex justify-between"><span>Sexo</span><span className="font-medium">{physicalData?.sexo ?? '—'}</span></div>
+                      <div className="flex justify-between"><span>Nível de atividade</span><span className="font-medium">{physicalData?.nivel_atividade ?? '—'}</span></div>
+          </div>
+              </CardContent>
+            </Card>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
     </div>
   );
 };
-
-export default SofiaNutricionalPage;
 
 

@@ -99,9 +99,10 @@ const SofiaConfirmationModal: React.FC<SofiaConfirmationModalProps> = ({
         }
       }
 
+      // MODO ESTRITO: não preencher quantidade por padrão; exigir confirmação do usuário
       const chosenQuantity = (typeof item.quantity === 'number' && item.quantity > 0)
         ? item.quantity
-        : getEstimatedQuantity(canonical);
+        : undefined;
       const unit = getUnit(canonical);
 
       if (!resultMap.has(canonical)) {
@@ -115,18 +116,21 @@ const SofiaConfirmationModal: React.FC<SofiaConfirmationModalProps> = ({
     }
 
     if (hasSalad) {
-      // Quantidade padrão de salada coerente e consistente
-      const saladQty = 80; // g
-      resultMap.set('Salada', { quantity: saladQty, unit: 'g' });
+      // Não atribuir quantidade padrão; usuário precisa informar
+      resultMap.set('Salada', { quantity: undefined, unit: 'g' });
     }
 
     // Converte para array ordenado por nome para estabilidade
     return Array.from(resultMap.entries())
       .sort((a, b) => a[0].localeCompare(b[0]))
-      .map(([name, v]) => ({ name, quantity: v.quantity || getEstimatedQuantity(name), unit: v.unit }));
+      .map(([name, v]) => ({ name, quantity: v.quantity ?? undefined, unit: v.unit }));
   }, [detectedFoods]);
 
   const [foodItems, setFoodItems] = useState<FoodItem[]>(normalizedInitialItems);
+  // Sincronizar quando os itens detectados chegarem após abrir o modal
+  React.useEffect(() => {
+    setFoodItems(normalizedInitialItems);
+  }, [normalizedInitialItems]);
   const [addName, setAddName] = useState('');
   const [addQty, setAddQty] = useState<string>('');
   const [addUnit, setAddUnit] = useState<'g' | 'ml'>('g');
@@ -166,7 +170,11 @@ const SofiaConfirmationModal: React.FC<SofiaConfirmationModalProps> = ({
       setAddQty('');
       return;
     }
-    const quantity = addQty === '' ? getEstimatedQuantity(name) : Math.max(0, Number(addQty));
+    if (addQty === '') {
+      toast.info('Informe a quantidade (g ou ml) para adicionar o item.');
+      return;
+    }
+    const quantity = Math.max(0, Number(addQty));
     const unit = addUnit || getUnit(name);
     setFoodItems(prev => {
       const existsIndex = prev.findIndex(i => i.name.toLowerCase() === name.toLowerCase());
@@ -261,7 +269,7 @@ const SofiaConfirmationModal: React.FC<SofiaConfirmationModalProps> = ({
     if (newFood.trim()) {
       const newItem: FoodItem = {
         name: newFood.trim(),
-        quantity: getEstimatedQuantity(newFood.trim()),
+        quantity: 0,
         unit: getUnit(newFood.trim())
       };
       setFoodItems([...foodItems, newItem]);
@@ -286,17 +294,24 @@ const SofiaConfirmationModal: React.FC<SofiaConfirmationModalProps> = ({
     setIsLoading(true);
     
     try {
+      // Exigir que todas as quantidades estejam preenchidas (>0)
+      const allFilled = foodItems.every(i => Number(i.quantity) > 0);
+      if (!allFilled) {
+        setIsLoading(false);
+        toast.warning('Preencha as gramas/ml de todos os alimentos do seu prato.');
+        return;
+      }
       const requestBody = {
         analysisId,
         confirmed: confirmed && isCorrect !== false,
         userId,
-        userCorrections: !confirmed || isCorrect === false ? {
+        userCorrections: {
           alimentos: foodItems.map(item => item.name),
           quantities: foodItems.reduce((acc, item, index) => {
             acc[item.name] = { quantity: item.quantity, unit: item.unit };
             return acc;
           }, {} as Record<string, { quantity: number; unit: string }>)
-        } : null
+        }
       };
 
       console.log('🔄 Enviando confirmação:', requestBody);
@@ -338,11 +353,16 @@ const SofiaConfirmationModal: React.FC<SofiaConfirmationModalProps> = ({
           } : null;
 
           const foodsList = foodItems.map(i => i.name).join(', ');
+          // Subtotais por item (aproximando com proporção pelo peso sólido)
+          const perItemLines = foodItems
+            .filter(i => i.unit === 'g' && Number(i.quantity) > 0)
+            .map(i => `• ${i.name} – ${i.quantity}g`)
+            .join('\n');
           const block = `🍽️ Prato identificado: ${foodsList}\n\n📊 Nutrientes (determinístico)\n- Calorias: ${Math.round(totals.kcal)} kcal\n- Proteínas: ${totals.protein_g.toFixed(1)} g\n- Carboidratos: ${totals.carbs_g.toFixed(1)} g\n- Gorduras: ${totals.fat_g.toFixed(1)} g` +
             (perGram ? `\n- Por grama: ${perGram.kcal.toFixed(2)} kcal/g, P ${perGram.p.toFixed(3)} g/g, C ${perGram.c.toFixed(3)} g/g, G ${perGram.f.toFixed(3)} g/g` : '') +
             (per100 ? `\n- Por 100 g: ${per100.kcal.toFixed(0)} kcal, P ${per100.p.toFixed(1)} g, C ${per100.c.toFixed(1)} g, G ${per100.f.toFixed(1)} g` : '');
 
-          message = block;
+          message = block + (perItemLines ? `\n\nItens e gramas:\n${perItemLines}` : '');
         }
 
         onConfirmation(message, data.estimated_calories);
@@ -408,6 +428,20 @@ const SofiaConfirmationModal: React.FC<SofiaConfirmationModalProps> = ({
                         <X className="h-3 w-3" />
                       </Button>
                     )}
+                  </div>
+                  {/* Chips de sugestão rápida */}
+                  <div className="flex flex-wrap gap-1 pl-2">
+                    {(['g','ml'].includes(item.unit) ? (item.unit === 'g' ? [30,50,80,100,150] : [50,100,150,200,250]) : []).map((v) => (
+                      <Button
+                        key={v}
+                        variant="outline"
+                        size="sm"
+                        className="h-6 px-2 text-[10px]"
+                        onClick={() => handleQuantityChange(index, String(v))}
+                      >
+                        {v}{item.unit}
+                      </Button>
+                    ))}
                   </div>
                 </div>
               ))}

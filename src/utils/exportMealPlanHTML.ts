@@ -208,4 +208,220 @@ export function downloadMealPlanHTML(plan: MealPlanForHTML) {
   URL.revokeObjectURL(url);
 }
 
+export function openWeeklyMealPlanHTML(weeklyPlan: Array<any>, opts?: { userName?: string; targetCalories?: number; days?: number }) {
+  const days = weeklyPlan?.length || 0;
+  const userName = opts?.userName || '';
+  const target = opts?.targetCalories;
+  const html = `<!doctype html>
+  <html lang="pt-br">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Cardápio Semanal — Sofia Nutricional</title>
+    <style>
+      :root { --emerald:#10B981; --bg:#ffffff; --muted:#f3f4f6; --text:#111827; --sub:#6b7280; }
+      body { margin:0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, Helvetica Neue, Arial; background:var(--bg); color:var(--text); }
+      .header { background:linear-gradient(90deg, #10B981, #7C3AED); color:#fff; padding:20px 24px; }
+      .title { margin:0; font-size:20px; font-weight:700; }
+      .subtitle { margin-top:4px; font-size:12px; opacity:.9 }
+      .container { max-width:1100px; margin:0 auto; padding:16px 24px 48px; }
+      .info { display:flex; gap:24px; flex-wrap:wrap; margin:16px 0 12px; }
+      .tag { background:var(--muted); color:var(--sub); border-radius:8px; padding:6px 10px; font-size:12px; }
+      table { width:100%; border-collapse:separate; border-spacing:0; margin-top:12px; }
+      thead th { text-align:left; font-size:12px; color:var(--sub); background:var(--muted); padding:10px 12px; }
+      tr:nth-child(even) { background:#fafafa; }
+      td, th { padding:10px 12px; vertical-align:top; border-bottom:1px solid #eee; }
+      .day { width:40px; font-weight:600; }
+      .meal { min-width:180px; }
+      .macros { color:#6b7280; font-size:12px; }
+      @media print { .print-hide { display:none; } body { background:#fff; } }
+      .btn { display:inline-block; border:1px solid var(--emerald); color:var(--emerald); padding:8px 12px; border-radius:8px; text-decoration:none; font-size:14px; }
+      .btn:hover { background:rgba(16,185,129,.06); }
+    </style>
+  </head>
+  <body>
+    <div class="header">
+      <div class="container">
+        <h1 class="title">Cardápio Semanal — Sofia Nutricional</h1>
+        <div class="subtitle">Sugestão de IA — não substitui avaliação profissional</div>
+      </div>
+    </div>
+    <div class="container">
+      <div class="info">
+        ${userName ? `<div class="tag">Usuário: ${escapeHtml(userName)}</div>` : ''}
+        <div class="tag">Dias: ${days}</div>
+        ${target ? `<div class="tag">Meta: ${Math.round(target)} kcal</div>` : ''}
+        <div class="print-hide" style="margin-left:auto;">
+          <a class="btn" href="#" onclick="window.print();return false;">Imprimir</a>
+        </div>
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th class="day">Dia</th>
+            <th>Café</th>
+            <th>Almoço</th>
+            <th>Lanche</th>
+            <th>Jantar</th>
+            <th>Ceia</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${weeklyPlan.map((d:any) => `
+            <tr>
+              <td class="day">${d.day}</td>
+              ${['breakfast','lunch','snack','dinner','supper'].map(slot => {
+                const m = d.meals?.[slot];
+                if (!m) return `<td class="meal">—</td>`;
+                const kcal = Math.round(m.macros?.calories || 0);
+                const prot = Math.round(m.macros?.protein || 0);
+                return `<td class="meal"><div><strong>${escapeHtml(m.title || '')}</strong></div><div class="macros">${kcal} kcal • ${prot}g P</div></td>`;
+              }).join('')}
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    </div>
+  </body>
+  </html>`;
+
+  const w = window.open('', '_blank');
+  if (w) {
+    w.document.open();
+    w.document.write(html);
+    w.document.close();
+  }
+}
+
+export function openWeeklyMealPlanClinicalHTML(weeklyPlan: Array<any>, opts?: { userName?: string; targetCalories?: number }) {
+  const css = `
+    :root { --green:#0EA45B; --green-dark:#0B7C44; --border:#1a1a1a; }
+    body { margin:0; font-family: Arial, Helvetica, sans-serif; color:#111; }
+    .page { width:794px; min-height:1123px; margin:0 auto; padding:24px; box-sizing:border-box; }
+    .header { text-align:center; margin-bottom:8px; }
+    .logo { width:70px; height:70px; border-radius:50%; background:#e8f7ef; display:inline-block; }
+    .clinic { font-weight:700; margin-top:6px; }
+    .plan-title { text-align:center; color:var(--green); font-size:22px; font-weight:900; margin:8px 0 2px; }
+    .subtitle { text-align:center; color:var(--green); font-weight:800; }
+    .bar { background:var(--green); color:#fff; padding:6px 10px; font-weight:900; display:flex; justify-content:space-between; align-items:center; }
+    .bar .kcal { font-size:12px; background:#fff; color:var(--green); padding:2px 6px; border-radius:4px; font-weight:700; }
+    table { width:100%; border-collapse:collapse; }
+    th, td { border:1px solid #9ca3af; padding:8px; font-size:13px; }
+    th { background:#e5f6ee; text-transform:uppercase; font-weight:800; }
+    .note { font-size:12px; font-style:italic; color:#374151; padding:6px 0 10px; }
+    .footer { font-size:11px; color:#374151; margin-top:8px; text-align:center; }
+    .meal-row { display:flex; align-items:flex-start; gap:10px; }
+    .thumb { width:48px; height:48px; object-fit:cover; border-radius:6px; border:1px solid #d1d5db; }
+    .progress-wrap { margin:8px 0 14px; background:#e5f6ee; height:10px; border-radius:8px; overflow:hidden; border:1px solid #c7eadc; }
+    .progress { height:100%; background:linear-gradient(90deg, #10B981,#7C3AED); }
+    .totals { margin-top:6px; font-weight:700; font-size:13px; }
+    .prep { border:1px dashed #9ca3af; padding:6px 8px; font-size:12px; color:#374151; border-radius:6px; background:#fafafa; }
+    @media print { .page { page-break-after: always; } }
+  `;
+
+  const mealLabel = (slot: string) => {
+    switch (slot) {
+      case 'breakfast': return 'DESJEJUM / CAFÉ DA MANHÃ';
+      case 'lunch': return 'ALMOÇO';
+      case 'snack': return 'LANCHE';
+      case 'dinner': return 'JANTAR';
+      case 'supper': return 'CEIA';
+      default: return slot.toUpperCase();
+    }
+  };
+
+  const kcalOf = (m:any)=> Math.round(m?.macros?.calories || 0);
+  const protOf = (m:any)=> Math.round(m?.macros?.protein || 0);
+
+  const measureFor = (title: string, slot: string): string => {
+    const t = (title || '').toLowerCase();
+    if (t.includes('omelete')) return '1 omelete média (~180 g)';
+    if (t.includes('quinoa') || t.includes('arroz')) return '1 prato (300–350 g)';
+    if (t.includes('sanduíche') || t.includes('sanduiche')) return '1 sanduíche (2 fatias de pão integral)';
+    if (t.includes('sopa')) return '1 prato fundo (~300 ml)';
+    if (t.includes('tilápia') || t.includes('tilapia') || t.includes('peixe')) return '1 filé médio + 1 porção de acompanhamento';
+    if (t.includes('frango')) return '1 filé médio (~120 g)';
+    if (t.includes('castanhas') || t.includes('mix de castanhas')) return '1 punhado (~30 g)';
+    if (t.includes('iogurte')) return '1 pote (~170 g)';
+    if (t.includes('kefir')) return '1 copo (200 ml)';
+    if (t.includes('leite') && t.includes('cacau')) return '1 caneca (200 ml)';
+    if (slot === 'snack') return '1 porção (~150–200 kcal)';
+    if (slot === 'supper') return '1 porção leve';
+    return '1 porção';
+  };
+
+  const prepFor = (title: string): string => {
+    const t = (title || '').toLowerCase();
+    if (t.includes('omelete')) return 'Bater ovos, temperar, grelhar em frigideira antiaderente; rechear a gosto.';
+    if (t.includes('quinoa')) return 'Cozinhar quinoa; saltear frango e brócolis; montar no prato e ajustar sal/azeite.';
+    if (t.includes('sanduíche') || t.includes('sanduiche')) return 'Misturar atum com iogurte/temperos; montar no pão com salada.';
+    if (t.includes('sopa')) return 'Refogar legumes e carne; cobrir com água; cozinhar até amaciar; ajustar temperos.';
+    if (t.includes('castanhas')) return 'Porcionar castanhas e frutas secas para consumo rápido.';
+    if (t.includes('iogurte')) return 'Misturar iogurte com frutas e granola no momento do consumo.';
+    if (t.includes('kefir')) return 'Servir o kefir gelado; polvilhar canela a gosto.';
+    if (t.includes('arroz') && t.includes('feijão')) return 'Servir arroz e feijão cozidos; grelhar a carne; montar o prato balanceado.';
+    if (t.includes('tilápia') || t.includes('tilapia')) return 'Temperar e assar grelhando a tilápia; servir com acompanhamento.';
+    if (t.includes('frango ao curry')) return 'Dourar frango; adicionar curry e líquidos; cozinhar até encorpar; servir com arroz integral.';
+    return 'Organizar ingredientes, cozinhar conforme costume e ajustar sal/azeite. Temperar saladas com azeite, vinagre e limão.';
+  };
+
+  const dayHtml = (d: any) => {
+    const meals = ['breakfast','lunch','snack','dinner','supper'] as const;
+    const dayKcal = meals.reduce((acc,slot)=> acc + (d.meals?.[slot]?.macros?.calories || 0), 0);
+    const pct = opts?.targetCalories ? Math.min(Math.round((dayKcal/opts.targetCalories)*100), 100) : 0;
+
+    return `
+      <div class="page">
+        <div class="header">
+          <div class="logo"></div>
+          <div class="clinic">Plano Alimentar — Dia ${d.day}</div>
+        </div>
+        <div class="plan-title">PLANO ALIMENTAR</div>
+        <div class="subtitle">Dieta com meta diária ${opts?.targetCalories ? Math.round(opts.targetCalories)+' kcal' : ''}</div>
+        <div class="progress-wrap"><div class="progress" style="width:${pct}%;"></div></div>
+        ${meals.map((slot) => {
+          const m = d.meals?.[slot];
+          const kcal = kcalOf(m);
+          const prep = m ? prepFor(m.title) : '';
+          const measure = m ? measureFor(m.title, slot) : '—';
+          return `
+            <div class="bar">
+              <div>${mealLabel(slot)}</div>
+              <div class="kcal">${kcal || ''} ${kcal ? 'kcal' : ''}</div>
+            </div>
+            <table>
+              <thead>
+                <tr><th style="width:65%">ALIMENTOS</th><th>MEDIDA CASEIRA</th></tr>
+              </thead>
+              <tbody>
+                ${m ? `
+                  <tr>
+                    <td>
+                      <div class="meal-row">
+                        ${m.image ? `<img class="thumb" src="${m.image}" alt="" />` : ''}
+                        <div>
+                          <div><strong>${escapeHtml(m.title || '')}</strong></div>
+                          <div style="color:#6b7280;font-size:12px;">${kcalOf(m)} kcal • ${protOf(m)} g proteína</div>
+                        </div>
+                      </div>
+                    </td>
+                    <td>${escapeHtml(measure)}</td>
+                  </tr>
+                ` : `<tr><td colspan="2">—</td></tr>`}
+              </tbody>
+            </table>
+            <div class="prep">Modo de preparo (sugestão): ${escapeHtml(prep)}</div>
+          `;
+        }).join('')}
+        <div class="totals">Total do dia: ${Math.round(dayKcal)} kcal ${opts?.targetCalories ? `(meta ${Math.round(opts.targetCalories)} kcal)` : ''}</div>
+        <div class="footer">Sofia Nutricional — documento educativo</div>
+      </div>
+    `;
+  };
+
+  const html = `<!doctype html><html lang="pt-br"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/><title>Cardápio Semanal — Clínico</title><style>${css}</style></head><body>${weeklyPlan.map(dayHtml).join('')}</body></html>`;
+  const w = window.open('', '_blank');
+  if (w) { w.document.open(); w.document.write(html); w.document.close(); }
+}
+
 

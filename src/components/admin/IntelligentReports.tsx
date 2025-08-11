@@ -260,42 +260,38 @@ const IntelligentReports: React.FC = () => {
         </CardContent>
       </Card>
 
-      {/* Níveis de IA */}
+      {/* Cartões detalhados removidos no modo enxuto; deixar apenas ações simples */}
       <div className="grid gap-4 md:grid-cols-3">
-        {Object.entries(levelInfo).map(([level, info]) => (
-          <Card key={level} className="relative overflow-hidden">
-            <div className={`absolute top-0 left-0 right-0 h-1 ${info.color}`}></div>
-            <CardHeader className="pb-3">
-              <CardTitle className="flex items-center gap-2 text-lg">
-                {info.icon}
-                NÍVEL {level.toUpperCase()}
-              </CardTitle>
-              <p className="text-sm text-muted-foreground">{info.description}</p>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-3">
-                <div className="space-y-1">
-                  {info.features.map((feature, index) => (
-                    <div key={index} className="flex items-center gap-2 text-sm">
-                      <div className={`w-1.5 h-1.5 rounded-full ${info.color}`}></div>
-                      {feature}
-                    </div>
-                  ))}
-                </div>
-                
-                <Button
-                  className="w-full mt-4"
-                  onClick={() => generateReport(level as any)}
-                  disabled={loading || !selectedUser}
-                  variant={level === 'maximo' ? 'default' : 'outline'}
-                >
-                  <Send className="h-4 w-4 mr-2" />
-                  Gerar Relatório {level.toUpperCase()}
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-        ))}
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle>Nível Máximo</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <Button className="w-full" onClick={() => generateReport('maximo' as any)} disabled={loading || !selectedUser}>
+              <Send className="h-4 w-4 mr-2" /> Gerar Relatório Máximo
+            </Button>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle>Nível Meio</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <Button className="w-full" variant="outline" onClick={() => generateReport('meio' as any)} disabled={loading || !selectedUser}>
+              <Send className="h-4 w-4 mr-2" /> Gerar Relatório Meio
+            </Button>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle>Nível Mínimo</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <Button className="w-full" variant="outline" onClick={() => generateReport('minimo' as any)} disabled={loading || !selectedUser}>
+              <Send className="h-4 w-4 mr-2" /> Gerar Relatório Mínimo
+            </Button>
+          </CardContent>
+        </Card>
       </div>
 
       <Card>

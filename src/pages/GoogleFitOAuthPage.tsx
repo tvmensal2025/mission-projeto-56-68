@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -17,11 +17,38 @@ import {
   ArrowLeft,
   CheckCircle
 } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
+import { supabase } from '@/integrations/supabase/client';
 
 const GoogleFitOAuthPage = () => {
   const [connecting, setConnecting] = useState(false);
+  const [alreadyConnected, setAlreadyConnected] = useState<boolean | null>(null);
   const { toast } = useToast();
+  const navigate = useNavigate();
+
+  // Verificar conexão existente e redirecionar automaticamente
+  useEffect(() => {
+    (async () => {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) { setAlreadyConnected(false); return; }
+        const { data: tokenRow } = await supabase
+          .from('google_fit_tokens')
+          .select('expires_at')
+          .eq('user_id', user.id)
+          .maybeSingle();
+        if (tokenRow && new Date(tokenRow.expires_at) > new Date()) {
+          setAlreadyConnected(true);
+          // Redirecionar suavemente
+          navigate('/dashboard', { replace: true });
+        } else {
+          setAlreadyConnected(false);
+        }
+      } catch {
+        setAlreadyConnected(false);
+      }
+    })();
+  }, [navigate]);
 
   const connectGoogleFit = async () => {
     try {
@@ -36,14 +63,14 @@ const GoogleFitOAuthPage = () => {
       ].join(' ');
       
       // Client ID do Google Cloud Console (configurado para institutodossonhos.com.br)
-      const clientId = '705908448787-ndqju36rr7d23no0vqkhqsaqrf5unsmc.apps.googleusercontent.com';
+      const clientId = '705908448787-so9cco4hkduhmr0lq4ftkng10hjcj1is.apps.googleusercontent.com';
       
       // Detectar automaticamente o ambiente
       const isLocalhost = window.location.hostname === 'localhost';
       const isInstitutoSonhos = window.location.hostname === 'institutodossonhos.com.br';
       
       const redirectUri = isLocalhost 
-        ? 'http://localhost:3000/google-fit-callback'
+        ? 'http://localhost:8083/google-fit-callback'
         : isInstitutoSonhos 
           ? 'https://institutodossonhos.com.br/google-fit-callback'
           : 'https://eb451b44-5d36-4bf7-8628-481a619af74a.lovableproject.com/google-fit-callback';
@@ -261,26 +288,16 @@ const GoogleFitOAuthPage = () => {
         <div className="text-center space-y-4">
           <Button 
             onClick={connectGoogleFit}
-            disabled={connecting}
+            disabled={connecting || alreadyConnected === true}
             size="lg"
             className="px-12 py-6 text-lg bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 text-white font-bold shadow-lg"
           >
-            {connecting ? (
-              <>
-                <Activity className="mr-2 h-5 w-5 animate-spin" />
-                Conectando...
-              </>
-            ) : (
-              <>
-                <Smartphone className="mr-2 h-5 w-5" />
-                Conectar Agora
-              </>
-            )}
+            {alreadyConnected ? 'Já conectado' : (connecting ? 'Conectando...' : 'Conectar Agora')}
           </Button>
-          
-          <p className="text-sm text-muted-foreground">
-            Ao conectar, você concorda em compartilhar seus dados do Google Fit conosco
-          </p>
+          {alreadyConnected && (
+            <p className="text-sm text-green-600">Conexão encontrada. Redirecionando...</p>
+          )}
+          <p className="text-sm text-muted-foreground">Ao conectar, você concorda em compartilhar seus dados do Google Fit conosco</p>
         </div>
       </div>
     </div>

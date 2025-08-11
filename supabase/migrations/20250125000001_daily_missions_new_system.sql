@@ -19,7 +19,7 @@ CREATE TABLE IF NOT EXISTS daily_responses (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
   date DATE NOT NULL DEFAULT CURRENT_DATE,
-  section TEXT NOT NULL CHECK (section IN ('morning', 'habits', 'mindset')),
+  section TEXT NOT NULL CHECK (section IN ('morning', 'habits', 'mindset', 'saboteurs', 'saboteurs_results')),
   question_id TEXT NOT NULL,
   answer TEXT NOT NULL,
   text_response TEXT,

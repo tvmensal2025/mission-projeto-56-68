@@ -18,12 +18,11 @@ import {
 
 interface GoogleFitStats {
   totalSteps: number;
-  totalDistance: number;
+  totalDistance: number; // metros
   totalCalories: number;
   avgHeartRate: number;
   totalActiveMinutes: number;
-  avgSleepDuration: number;
-  workoutFrequency: number;
+  avgSleepHours: number; // alinhado com currentStats
 }
 
 interface OverviewWithGoogleFitProps {
@@ -147,7 +146,7 @@ export const OverviewWithGoogleFit: React.FC<OverviewWithGoogleFitProps> = ({
           <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
             <GoogleFitMetricCard
               title="Passos"
-              value={weeklyFitStats.totalSteps}
+              value={weeklyFitStats.totalSteps || 0}
               unit=""
               icon={Footprints}
               target={70000} // 10k passos x 7 dias
@@ -157,7 +156,7 @@ export const OverviewWithGoogleFit: React.FC<OverviewWithGoogleFitProps> = ({
 
             <GoogleFitMetricCard
               title="Calorias"
-              value={weeklyFitStats.totalCalories}
+              value={weeklyFitStats.totalCalories || 0}
               unit="kcal"
               icon={Flame}
               target={2100} // 300 kcal x 7 dias
@@ -167,7 +166,7 @@ export const OverviewWithGoogleFit: React.FC<OverviewWithGoogleFitProps> = ({
 
             <GoogleFitMetricCard
               title="FC Média"
-              value={weeklyFitStats.avgHeartRate}
+              value={weeklyFitStats.avgHeartRate || 0}
               unit="bpm"
               icon={Heart}
               target={80}
@@ -177,7 +176,7 @@ export const OverviewWithGoogleFit: React.FC<OverviewWithGoogleFitProps> = ({
 
             <GoogleFitMetricCard
               title="Minutos Ativos"
-              value={weeklyFitStats.totalActiveMinutes}
+              value={weeklyFitStats.totalActiveMinutes || 0}
               unit="min"
               icon={Clock}
               target={150} // 150 min por semana
@@ -187,7 +186,7 @@ export const OverviewWithGoogleFit: React.FC<OverviewWithGoogleFitProps> = ({
 
             <GoogleFitMetricCard
               title="Distância"
-              value={weeklyFitStats.totalDistance}
+              value={Math.round((weeklyFitStats.totalDistance || 0) / 1000)}
               unit="km"
               icon={TrendingUp}
               target={35} // 5km x 7 dias
@@ -197,7 +196,7 @@ export const OverviewWithGoogleFit: React.FC<OverviewWithGoogleFitProps> = ({
 
             <GoogleFitMetricCard
               title="Sono Médio"
-              value={weeklyFitStats.avgSleepDuration}
+              value={weeklyFitStats.avgSleepHours || 0}
               unit="h"
               icon={Moon}
               target={8}
@@ -205,28 +204,7 @@ export const OverviewWithGoogleFit: React.FC<OverviewWithGoogleFitProps> = ({
               color="text-indigo-500"
             />
 
-            <GoogleFitMetricCard
-              title="Treinos"
-              value={weeklyFitStats.workoutFrequency}
-              unit="vezes"
-              icon={Zap}
-              target={3}
-              cardVariants={cardVariants}
-              color="text-yellow-500"
-            />
-
-            <motion.div variants={cardVariants} whileHover="hover">
-              <Card className="p-6">
-                <h3 className="text-xl font-semibold mb-2">Dias de Acompanhamento</h3>
-                <div className="text-2xl sm:text-3xl font-bold">{measurementDays}</div>
-                <div className="mt-2 flex items-center gap-2">
-                  <Target className="h-5 w-5 text-yellow-500" />
-                  <span className="text-sm text-muted-foreground">
-                    {measurementDays >= 30 ? 'Mestre!' : `${30 - measurementDays} dias para o próximo marco`}
-                  </span>
-                </div>
-              </Card>
-            </motion.div>
+            {/* Troquei 'Treinos' por Minutos Ativos acima para evitar undefined */}
           </div>
         </>
       )}
@@ -264,40 +242,18 @@ const MetricCard: React.FC<{
   available?: boolean;
 }> = ({ title, value, trend, unit, reference, icon: Icon, cardVariants, available = true }) => {
   const getTrendColor = (trend?: number) => {
-    if (!trend) return 'text-gray-500';
+    if (trend === undefined || trend === null) return 'text-gray-500';
     return trend < 0 ? 'text-green-500' : 'text-red-500';
   };
 
   const getTrendIcon = (trend?: number) => {
-    if (!trend) return null;
+    if (trend === undefined || trend === null) return null;
     return trend < 0 ? '↓' : '↑';
   };
 
-  if (!available) {
-    return (
-      <motion.div variants={cardVariants} whileHover="hover">
-        <Card className="p-6 transition-all duration-300 opacity-50">
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="text-lg font-semibold">{title}</h3>
-            {Icon && <Icon className="h-5 w-5 text-muted-foreground" />}
-          </div>
-          
-          <div className="flex items-end gap-2 mb-2">
-                          <div className="text-2xl sm:text-3xl font-bold text-muted-foreground">
-              --
-              {unit && <span className="text-lg ml-1">{unit}</span>}
-            </div>
-          </div>
-          
-          <p className="text-sm text-muted-foreground">Dados não disponíveis</p>
-        </Card>
-      </motion.div>
-    );
-  }
-
   return (
     <motion.div variants={cardVariants} whileHover="hover">
-      <Card className="p-6 transition-all duration-300 hover:shadow-lg stat-card-responsive">
+      <Card className={`p-6 transition-all duration-300 hover:shadow-lg stat-card-responsive ${!available ? 'opacity-50' : ''}`}>
         <div className="flex items-center justify-between mb-3">
           <h3 className="text-lg font-semibold">{title}</h3>
           {Icon && <Icon className="h-5 w-5 text-muted-foreground" />}
@@ -305,10 +261,10 @@ const MetricCard: React.FC<{
         
         <div className="flex items-end gap-2 mb-2">
           <div className="stat-number-responsive">
-            {value?.toFixed(1)}
+            {typeof value === 'number' && !Number.isNaN(value) ? value.toFixed(1) : '--'}
             {unit && <span className="text-lg ml-1">{unit}</span>}
           </div>
-          {trend !== undefined && (
+          {trend !== undefined && trend !== null && (
             <motion.div
               initial={{ scale: 0 }}
               animate={{ scale: 1 }}
@@ -339,7 +295,8 @@ const GoogleFitMetricCard: React.FC<{
 }> = ({ title, value, unit, icon: Icon, target, cardVariants, color = "text-primary" }) => {
   const progress = target ? Math.min(100, (value / target) * 100) : 0;
   
-  const formatValue = (val: number): string => {
+  const formatValue = (val: number | undefined | null): string => {
+    if (typeof val !== 'number' || Number.isNaN(val)) return '0';
     if (val >= 1000) {
       return `${(val / 1000).toFixed(1)}k`;
     }
@@ -359,7 +316,7 @@ const GoogleFitMetricCard: React.FC<{
           {unit && <span className="text-lg ml-1">{unit}</span>}
         </div>
         
-        {target && (
+        {typeof target === 'number' && !Number.isNaN(target) && (
           <>
             <Progress value={progress} className="mb-2" />
             <p className="text-sm text-muted-foreground">

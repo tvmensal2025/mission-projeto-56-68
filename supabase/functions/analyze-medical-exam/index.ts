@@ -13,12 +13,16 @@ serve(async (req) => {
   }
 
   try {
+    // Inicializar Supabase (usar service role para ler configs com segurança)
+    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+    const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+    const supabase = createClient(supabaseUrl, supabaseKey);
+
     // Buscar configuração de IA para análise médica
     const { data: aiConfig, error: configError } = await supabase
       .from('ai_configurations')
-      .select('service, model, max_tokens, temperature, preset_level')
+      .select('service, model, max_tokens, temperature, preset_level, system_prompt, is_enabled, is_active')
       .eq('functionality', 'medical_analysis')
-      .eq('is_enabled', true)
       .single();
 
     // Usar configuração padrão se não encontrar
@@ -42,11 +46,6 @@ serve(async (req) => {
     }
 
     const { imageData, examType, userId } = await req.json();
-
-    // Inicializar Supabase para buscar dados do usuário
-    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-    const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-    const supabase = createClient(supabaseUrl, supabaseKey);
 
     // Buscar dados completos do usuário
     const [
@@ -72,8 +71,8 @@ serve(async (req) => {
       goals: goals || []
     };
 
-    // Preparar prompt para IA
-    const systemPrompt = `Você é um assistente médico especializado em análise de exames laboratoriais e integração com dados de saúde pessoais.
+    // Preparar prompt para IA (permite sobrescrever via DB)
+    let systemPrompt = `Você é um assistente médico especializado em análise de exames laboratoriais e integração com dados de saúde pessoais.
 
 IMPORTANTE: Você NÃO é um médico e suas análises são apenas informativas. Sempre recomende consultar um profissional de saúde qualificado.
 
@@ -105,7 +104,11 @@ Formato da resposta:
 
 Seja preciso, didático e sempre inclua disclaimers apropriados.
 
-Analise este exame médico do tipo ${examType} e correlacione com meu histórico de saúde.`;
+    Analise este exame médico do tipo ${examType} e correlacione com meu histórico de saúde.`;
+
+    if ((aiConfig as any)?.system_prompt) {
+      systemPrompt = (aiConfig as any).system_prompt as string;
+    }
 
     // Converter imagem para base64 se necessário
     let imageBase64 = imageData;

@@ -122,20 +122,32 @@ Vou ajustar minha análise para ser mais precisa na próxima vez! Continue envia
       'ovos cozidos': 'ovo de galinha cozido'
     };
 
-    function canonicalizeFoods(foods: string[]): string[] {
+    function canonicalizeFoods(foods: string[], quantities?: Record<string, { quantity: number; unit: string }>): string[] {
       const items = [...foods];
       const lower = items.map((x) => (x || '').toLowerCase());
-      const hasOil = lower.some((n) => n.includes('óleo') || n.includes('oleo'));
-      if (hasOil) {
-        for (let i = 0; i < items.length; i++) {
-          const n = (items[i] || '').toLowerCase();
-          if (n.includes('batata') && !n.includes('frita') && !n.includes('cozid')) {
-            items[i] = 'batata frita';
-          }
+      const hasOilWord = lower.some((n) => n.includes('óleo') || n.includes('oleo'));
+      // Detecta se o usuário forneceu quantidade explícita de óleo/azeite
+      let hasExplicitOilQty = false;
+      if (quantities && Object.keys(quantities).length > 0) {
+        const norm = (t: string) => (t||'').toLowerCase().normalize('NFD').replace(/\p{Diacritic}+/gu,'').replace(/[^a-z0-9 ]/g,' ').trim();
+        for (const [k, v] of Object.entries(quantities)) {
+          const nk = norm(k);
+          if ((nk.includes('oleo') || nk.includes('azeite')) && Number(v?.quantity) > 0) { hasExplicitOilQty = true; break; }
         }
-        for (let i = items.length - 1; i >= 0; i--) {
-          const n = (items[i] || '').toLowerCase();
-          if (n.includes('óleo') || n.includes('oleo')) items.splice(i, 1);
+      }
+      if (hasOil) {
+        // Se houver quantidade explícita de óleo, não alterar batata nem remover óleo (evita dupla contagem e preserva a intenção do usuário)
+        if (!hasExplicitOilQty) {
+          for (let i = 0; i < items.length; i++) {
+            const n = (items[i] || '').toLowerCase();
+            if (n.includes('batata') && !n.includes('frita') && !n.includes('cozid')) {
+              items[i] = 'batata frita';
+            }
+          }
+          for (let i = items.length - 1; i >= 0; i--) {
+            const n = (items[i] || '').toLowerCase();
+            if (n.includes('óleo') || n.includes('oleo')) items.splice(i, 1);
+          }
         }
       }
       for (let i = 0; i < items.length; i++) {
@@ -217,17 +229,38 @@ Vou ajustar minha análise para ser mais precisa na próxima vez! Continue envia
     if (confirmed) {
       // USUÁRIO CONFIRMOU - Calcular determinístico via nutrition-calc
       const confirmedFoods = originalAnalysis.foods_detected || [];
-      const normalizedFoods = canonicalizeFoods(confirmedFoods);
-
-      // Se o modal enviou quantidades, usar exatamente elas
       const quantitiesMap = (userCorrections as any)?.quantities as Record<string, { quantity: number; unit: string }> | undefined;
+      const normalizedFoods = canonicalizeFoods(confirmedFoods, quantitiesMap);
+
+      // Se o modal enviou quantidades, usar exatamente elas (com correspondência robusta de nomes)
       if (quantitiesMap && Object.keys(quantitiesMap).length > 0) {
-        const itemsExplicit = normalizedFoods.map((name) => {
-          const q = quantitiesMap[name] || quantitiesMap[name.toLowerCase()] || null;
-          const grams = q && q.unit === 'g' ? Number(q.quantity) : undefined;
-          const ml = q && q.unit === 'ml' ? Number(q.quantity) : undefined;
-          return { name, grams, ml };
-        });
+        // Construir itens diretamente a partir das quantidades informadas pelo usuário (mais robusto)
+        const norm = (t: string) => (t || '')
+          .toLowerCase()
+          .normalize('NFD')
+          .replace(/\p{Diacritic}+/gu, '')
+          .replace(/[^a-z0-9 ]/g, ' ')
+          .trim()
+          .replace(/\s+/g, ' ');
+        const canonicalFromUser = (raw: string): string => {
+          const n = norm(raw);
+          if (n.includes('arroz')) return 'arroz, branco, cozido';
+          if (n.includes('frango')) return 'frango, peito, grelhado';
+          if (n.includes('feij')) return 'feijao carioca cozido';
+          if (n.includes('batata frit')) return 'batata frita';
+          if (n.includes('batata')) return 'batata cozida';
+          if (n.includes('azeite') || n.includes('oleo')) return 'Azeite de oliva';
+          if (n.includes('salada') || n.includes('alface') || n.includes('tomate')) return 'salada verde';
+          if (n.includes('carne')) return 'carne bovina cozida';
+          return raw;
+        };
+        const itemsExplicit = Object.entries(quantitiesMap)
+          .map(([name, q]) => ({
+            name: canonicalFromUser(name),
+            grams: (q?.unit||'').toLowerCase()==='g' ? Number(q?.quantity||0) : undefined,
+            ml: (q?.unit||'').toLowerCase()==='ml' ? Number(q?.quantity||0) : undefined,
+          }))
+          .filter(it => (it.grams && it.grams>0) || (it.ml && it.ml>0));
         const det = await calcTotalsExplicit(itemsExplicit);
         deterministicTotals = det.totals;
       } else {

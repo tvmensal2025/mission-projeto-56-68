@@ -22,6 +22,7 @@ interface SofiaChatProps {
 
 const SofiaChat: React.FC<SofiaChatProps> = ({ user }) => {
   const [messages, setMessages] = useState<Message[]>([]);
+  const [pendingInvites, setPendingInvites] = useState<any[]>([]);
   const [inputMessage, setInputMessage] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [selectedImage, setSelectedImage] = useState<File | null>(null);
@@ -50,6 +51,60 @@ O que você gostaria de conversar hoje? Pode me enviar uma foto da sua refeiçã
       }]);
     }
   }, [user, messages.length]);
+
+  // Buscar convites pendentes (metas em grupo) para este usuário
+  async function loadPendingInvites() {
+    try {
+      if (!user) return;
+      const { data, error } = await supabase
+        .from('user_goal_invitations')
+        .select('id, goal_id, invitee_name, invitee_email, status, created_at')
+        .eq('invitee_user_id', user.id)
+        .eq('status', 'pending')
+        .order('created_at', { ascending: false });
+      if (!error) setPendingInvites(data || []);
+    } catch (e) {
+      console.error('Erro ao carregar convites:', e);
+    }
+  }
+
+  useEffect(() => { loadPendingInvites(); }, [user]);
+  useEffect(() => {
+    const i = setInterval(() => loadPendingInvites(), 30000);
+    return () => clearInterval(i);
+  }, [user]);
+
+  async function acceptInvite(inviteId: string, goalId: string) {
+    try {
+      if (!user) return;
+      // inserir participação
+      await supabase.from('user_goal_participants').insert({ goal_id: goalId, user_id: user.id, can_view_progress: true });
+      // atualizar convite
+      await supabase.from('user_goal_invitations').update({ status: 'approved' }).eq('id', inviteId);
+      await loadPendingInvites();
+      toast.success('Meta sincronizada! Vocês poderão ver o progresso um do outro.');
+      setMessages(prev => [...prev, {
+        id: Date.now().toString(),
+        type: 'sofia',
+        content: 'Parabéns! 🎉 Sua nova meta compartilhada foi aprovada e sincronizada. Estou aqui para te ajudar nessa jornada!',
+        timestamp: new Date()
+      }]);
+    } catch (e) {
+      console.error(e);
+      toast.error('Não foi possível aceitar o convite.');
+    }
+  }
+
+  async function rejectInvite(inviteId: string) {
+    try {
+      await supabase.from('user_goal_invitations').update({ status: 'rejected' }).eq('id', inviteId);
+      await loadPendingInvites();
+      toast.info('Convite recusado.');
+    } catch (e) {
+      console.error(e);
+      toast.error('Não foi possível recusar o convite.');
+    }
+  }
 
   // Auto scroll para a última mensagem
   useEffect(() => {
@@ -257,6 +312,25 @@ O que você gostaria de conversar hoje? Pode me enviar uma foto da sua refeiçã
 
   return (
     <div className="space-y-4">
+      {/* Notificações de novas metas (Sofia pisca) */}
+      {pendingInvites.length > 0 && (
+        <Card className="border-2 border-amber-300 bg-amber-50 animate-pulse">
+          <CardContent className="p-4">
+            {pendingInvites.map((inv) => (
+              <div key={inv.id} className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                <div className="text-amber-800 text-sm">
+                  ✨ Nova meta compartilhada com você! Aguardando sua aprovação.
+                </div>
+                <div className="flex gap-2">
+                  <Button size="sm" className="bg-green-600 hover:bg-green-700" onClick={() => acceptInvite(inv.id, inv.goal_id)}>Aceitar</Button>
+                  <Button size="sm" variant="outline" onClick={() => rejectInvite(inv.id)}>Recusar</Button>
+                </div>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      )}
+
       {/* Chat Messages */}
       <Card className="bg-gray-50 border-2 border-dashed border-gray-200">
         <CardContent className="p-4">

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { supabase } from "@/integrations/supabase/client";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -149,11 +150,23 @@ export const CourseModal = ({ isOpen, onClose, onSubmit }: CourseModalProps) => 
 
     setIsLoading(true);
     try {
+      let uploadedUrl: string | undefined;
+      // Upload para Storage quando houver arquivo selecionado
+      if (imageSource === 'file' && coverImage) {
+        const filePath = `course-thumbnails/${Date.now()}_${coverImage.name}`;
+        const { error: upErr } = await supabase.storage.from('course-thumbnails').upload(filePath, coverImage, {
+          cacheControl: '3600',
+          upsert: false,
+        });
+        if (upErr) throw upErr;
+        const { data: pub } = supabase.storage.from('course-thumbnails').getPublicUrl(filePath);
+        uploadedUrl = pub?.publicUrl;
+      }
+
       const courseData = {
         ...formData,
         // Usar URL da imagem se fornecida, senão usar o arquivo
-        thumbnail_url: imageSource === 'url' && imageUrl ? imageUrl : 
-                     coverImage ? URL.createObjectURL(coverImage) : undefined
+        thumbnail_url: imageSource === 'url' && imageUrl ? imageUrl : uploadedUrl
       };
       
       await onSubmit(courseData);

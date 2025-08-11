@@ -394,7 +394,7 @@ export default function ChallengeManagement({ user }: ChallengeManagementProps) 
   });
 
   const renderModal = (isEdit: boolean) => (
-    <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+    <DialogContent className="w-[95vw] max-w-2xl max-h-[80vh] overflow-y-auto">
       <DialogHeader>
         <DialogTitle className="flex items-center gap-2">
           <Trophy className="h-5 w-5" />

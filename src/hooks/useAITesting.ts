@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 
 interface AITestResult {
-  service: 'openai' | 'gemini';
+  service: 'openai' | 'gemini' | 'ollama';
   model: string;
   success: boolean;
   response?: string;
@@ -15,7 +15,7 @@ export function useAITesting() {
   const [isLoading, setIsLoading] = useState(false);
   const [results, setResults] = useState<AITestResult[]>([]);
 
-  const testOpenAI = async (model: string, message: string = 'Olá, como você está?'): Promise<AITestResult> => {
+  const testOpenAI = async (model: string, message: string = 'Olá, como você está?', functionality?: string): Promise<AITestResult> => {
     const startTime = Date.now();
     
     try {
@@ -27,7 +27,8 @@ export function useAITesting() {
             { role: 'user', content: message }
           ],
           temperature: 0.7,
-          max_tokens: 100
+          max_tokens: 100,
+          functionality
         }
       });
 
@@ -52,7 +53,7 @@ export function useAITesting() {
     }
   };
 
-  const testGemini = async (model: string, message: string = 'Olá, como você está?'): Promise<AITestResult> => {
+  const testGemini = async (model: string, message: string = 'Olá, como você está?', functionality?: string): Promise<AITestResult> => {
     const startTime = Date.now();
     
     try {
@@ -62,7 +63,8 @@ export function useAITesting() {
           model,
           prompt: message,
           temperature: 0.7,
-          max_tokens: 100
+          max_tokens: 100,
+          functionality
         }
       });
 
@@ -79,6 +81,44 @@ export function useAITesting() {
     } catch (error) {
       return {
         service: 'gemini',
+        model,
+        success: false,
+        error: error.message,
+        duration: Date.now() - startTime
+      };
+    }
+  };
+
+  const testOllama = async (model: string, message: string = 'Olá, como você está?', functionality?: string): Promise<AITestResult> => {
+    const startTime = Date.now();
+    
+    try {
+      const { data, error } = await supabase.functions.invoke('gpt-chat', {
+        body: {
+          service: 'ollama',
+          model,
+          messages: [
+            { role: 'user', content: message }
+          ],
+          temperature: 0.7,
+          max_tokens: 100,
+          functionality
+        }
+      });
+
+      if (error) throw error;
+
+      return {
+        service: 'ollama',
+        model,
+        success: true,
+        response: data.content,
+        duration: Date.now() - startTime,
+        tokens: data.usage?.total_tokens
+      };
+    } catch (error: any) {
+      return {
+        service: 'ollama',
         model,
         success: false,
         error: error.message,
@@ -132,9 +172,8 @@ export function useAITesting() {
       // Gemini Tests
       { type: 'gemini', model: 'gemini-1.5-pro', message: 'Teste Gemini Pro' },
       { type: 'gemini', model: 'gemini-1.5-flash', message: 'Teste Gemini Flash' },
-      
-      // Sofia Chat Test
-      { type: 'sofia', model: 'sofia-chat', message: 'Oi Sofia, como você está?' }
+      // Ollama Tests
+      { type: 'ollama', model: 'llama3.1:8b-instruct-q4_0', message: 'Teste Ollama Llama3.1' }
     ];
 
     const testResults: AITestResult[] = [];
@@ -147,8 +186,8 @@ export function useAITesting() {
           result = await testOpenAI(testCase.model, testCase.message);
         } else if (testCase.type === 'gemini') {
           result = await testGemini(testCase.model, testCase.message);
-        } else {
-          result = await testSofiaChat(testCase.message);
+        } else if (testCase.type === 'ollama') {
+          result = await testOllama(testCase.model, testCase.message);
         }
         
         testResults.push(result);
@@ -160,7 +199,7 @@ export function useAITesting() {
       } catch (error) {
         console.error(`Erro no teste ${testCase.model}:`, error);
         testResults.push({
-          service: testCase.type === 'openai' ? 'openai' : 'gemini',
+          service: (testCase.type === 'openai' ? 'openai' : (testCase.type === 'gemini' ? 'gemini' : 'ollama')) as any,
           model: testCase.model,
           success: false,
           error: error.message
@@ -173,26 +212,26 @@ export function useAITesting() {
     return testResults;
   };
 
-  const testSpecificModel = async (service: 'openai' | 'gemini' | 'sofia', model: string, message: string) => {
+  const testSpecificModel = async (service: 'openai' | 'gemini' | 'ollama', model: string, message: string, functionality?: string) => {
     setIsLoading(true);
     
     let result: AITestResult;
     
     try {
       if (service === 'openai') {
-        result = await testOpenAI(model, message);
+        result = await testOpenAI(model, message, functionality);
       } else if (service === 'gemini') {
-        result = await testGemini(model, message);
-      } else {
-        result = await testSofiaChat(message);
+        result = await testGemini(model, message, functionality);
+      } else if (service === 'ollama') {
+        result = await testOllama(model, message, functionality);
       }
       
       setResults(prev => [...prev, result]);
       setIsLoading(false);
       return result;
-    } catch (error) {
+    } catch (error: any) {
       result = {
-        service: service === 'sofia' ? 'gemini' : service,
+        service: service as any,
         model,
         success: false,
         error: error.message
@@ -210,7 +249,6 @@ export function useAITesting() {
     testSpecificModel,
     testOpenAI,
     testGemini,
-    testSofiaChat,
     clearResults: () => setResults([])
   };
 }

@@ -28,7 +28,8 @@ import {
   Bell,
   Brain,
   Building2,
-  MessageCircle
+  MessageCircle,
+  Utensils
 } from "lucide-react";
 import AdminDashboard from "@/components/admin/AdminDashboard";
 import UserManagement from "@/components/admin/UserManagement";
@@ -42,10 +43,8 @@ import SessionManagement from "@/components/admin/SessionManagement";
 import ChallengeManagement from "@/components/admin/ChallengeManagement";
 import { N8nWebhookManager } from "@/components/N8nWebhookManager";
 import { AIControlPanelUnified } from "@/components/admin/AIControlPanelUnified";
-import IntelligentReports from "@/components/admin/IntelligentReports";
 import CompanyConfiguration from "@/components/admin/CompanyConfiguration";
 import { SessionAssigner } from "@/components/admin/SessionAssigner";
-import SofiaManagement from "@/components/admin/SofiaManagement";
 
 import SystemStatus from "@/components/admin/SystemStatus";
 import SimulatedTests from "@/components/admin/SimulatedTests";
@@ -158,6 +157,7 @@ const AdminPage = () => {
     { id: 'payments', icon: CreditCard, label: 'Gestão de Pagamentos', color: 'text-emerald-500', description: 'Gestão Asaas e assinaturas' },
     { id: 'company-config', icon: Building2, label: '🏢 Dados da Empresa', color: 'text-indigo-500', description: 'Configure dados da empresa para melhor IA' },
     { id: 'ai-control', icon: Brain, label: '🧠 Controle Unificado de IA', color: 'text-purple-500', description: 'Configuração Avançada - DrVital/Sofia - MÁXIMO/MEIO/MÍNIMO' },
+    { id: 'mealie', icon: Utensils, label: 'Mealie (Cardápio)', color: 'text-emerald-600', description: 'Curadoria de receitas e token' },
     { id: 'sessions', icon: FileText, label: 'Gestão de Sessões', color: 'text-cyan-500', description: 'Criar e enviar sessões personalizadas' },
     { id: 'n8n', icon: Activity, label: 'Automação n8n', color: 'text-violet-500', description: 'Webhooks para WhatsApp e automações' },
     { id: 'devices', icon: Monitor, label: 'Gestão de Dispositivos', color: 'text-indigo-500', description: 'Dispositivos conectados' },
@@ -219,7 +219,76 @@ const AdminPage = () => {
               </Badge>
             </div>
             <AIControlPanelUnified />
-            <IntelligentReports />
+          </div>
+        );
+      case 'mealie':
+        return (
+          <div className="space-y-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <h1 className="text-3xl font-bold flex items-center gap-2">
+                  <Utensils className="h-6 w-6 text-emerald-600" />
+                  Mealie (Gerador de Cardápio)
+                </h1>
+                <p className="text-muted-foreground">
+                  Painel de curadoria de receitas e token da API. Usuários não acessam este painel; apenas a Sofia consome a API com um token seguro.
+                </p>
+              </div>
+              <div className="flex gap-2">
+                <Button onClick={() => window.open('http://localhost:9925/admin/site-settings', '_blank')}>
+                  Abrir Mealie Admin
+                </Button>
+                <Button variant="outline" onClick={() => window.open('http://localhost:9925/admin/recipes', '_blank')}>
+                  Receitas
+                </Button>
+              </div>
+            </div>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>O que fazer aqui</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3 text-sm">
+                <ol className="list-decimal pl-5 space-y-2">
+                  <li>
+                    Gerar um <strong>Token de API</strong>: em Settings → API Tokens (ou Personal Access Tokens) → Create Token. Copie e guarde.
+                  </li>
+                  <li>
+                    <strong>Salvar o token</strong> nos segredos (ex.: Supabase):
+                    <pre className="mt-2 p-2 bg-muted rounded">supabase secrets set MEALIE_BASE_URL=http://localhost:9925 MEALIE_API_TOKEN=SEU_TOKEN</pre>
+                  </li>
+                  <li>
+                    Fazer <strong>curadoria de receitas</strong>: adicione títulos, imagens, ingredientes e nutrição quando disponível.
+                  </li>
+                  <li>
+                    Marcar <strong>tags por refeição</strong>: breakfast, lunch, snack, dinner, supper.
+                  </li>
+                  <li>
+                    Marcar <strong>dietas</strong> (keto/veg/etc.), alergênicos, <strong>tempo</strong> de preparo e <strong>custo</strong>.
+                  </li>
+                  <li>
+                    Manter ao menos <strong>10+ receitas por refeição</strong> para variedade e rotação.
+                  </li>
+                  <li>
+                    Na Sofia, use a aba <strong>Cardápio</strong> para gerar e testar; a função usa esse token e suas tags.
+                  </li>
+                </ol>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>Boas práticas</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-2 text-sm">
+                <ul className="list-disc pl-5 space-y-1">
+                  <li>Deixe o Mealie <strong>privado</strong> (ALLOW_SIGNUP=false) em produção.</li>
+                  <li>Token <strong>service-only</strong>, não compartilhar com usuários.</li>
+                  <li>Complete nutrição sempre que possível; se faltar, a Sofia complementa pela base local.</li>
+                  <li>Revise variedade semanal e evite repetição de ingredientes.</li>
+                </ul>
+              </CardContent>
+            </Card>
           </div>
         );
       case 'payments':

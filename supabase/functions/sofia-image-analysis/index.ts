@@ -1,6 +1,7 @@
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.7.1';
+import { calcNutrition } from './nutrition-calc.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -17,9 +18,66 @@ const minPortionConfidence = Number(Deno.env.get('SOFIA_PORTION_CONFIDENCE_MIN')
 // Desativar GPT por padrão: vamos padronizar na família Gemini
 const sofiaUseGpt = (Deno.env.get('SOFIA_USE_GPT') || 'false').toLowerCase() === 'true';
 // Modo estrito: sem fallback de porções padrão. Só calcula quando houver gramas/ml confiáveis
-const strictMode = (Deno.env.get('SOFIA_STRICT_MODE') || 'false').toLowerCase() === 'true';
+// Default agora é 'true' para evitar números errados quando a IA não fornecer quantidades
+const strictMode = (Deno.env.get('SOFIA_STRICT_MODE') || 'true').toLowerCase() === 'true';
 // Proxy do Ollama (FastAPI) para normalização e validação
 const ollamaProxyUrl = (Deno.env.get('OLLAMA_PROXY_URL') || 'http://localhost:8000').replace(/\/$/, '');
+// YOLO microserviço opcional
+const yoloEnabled = (Deno.env.get('YOLO_ENABLED') || 'false').toLowerCase() === 'true';
+const yoloServiceUrl = (Deno.env.get('YOLO_SERVICE_URL') || 'http://localhost:8001').replace(/\/$/, '');
+// Label Studio integração opcional
+const labelStudioEnabled = (Deno.env.get('LABEL_STUDIO_ENABLED') || 'false').toLowerCase() === 'true';
+const labelStudioUrl = (Deno.env.get('LABEL_STUDIO_URL') || 'http://localhost:8080').replace(/\/$/, '');
+const labelStudioToken = Deno.env.get('LABEL_STUDIO_TOKEN') || '';
+const labelStudioProjectId = Deno.env.get('LABEL_STUDIO_PROJECT_ID') || '';
+
+// Mapeamento básico de classes COCO → alimentos pt-BR
+const YOLO_CLASS_MAP: Record<string, string> = {
+  // bebidas (contêineres)
+  'cup': 'água',
+  'bottle': 'água',
+  'wine glass': 'vinho',
+  // comidas comuns do COCO
+  'banana': 'banana',
+  'apple': 'maçã',
+  'orange': 'laranja',
+  'broccoli': 'brócolis',
+  'carrot': 'cenoura',
+  'pizza': 'pizza',
+  'cake': 'bolo',
+  'donut': 'rosquinha',
+  'sandwich': 'sanduíche',
+  'hot dog': 'cachorro-quente'
+};
+
+async function tryYoloDetect(imageUrl: string): Promise<{ foods: string[]; liquids: string[]; maxConfidence: number } | null> {
+  if (!yoloEnabled) return null;
+  try {
+    const resp = await fetch(`${yoloServiceUrl}/detect`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ image_url: imageUrl, task: 'segment', confidence: 0.35 })
+    });
+    if (!resp.ok) return null;
+    const data = await resp.json();
+    const objects: Array<{ class_name: string; score: number }> = Array.isArray(data?.objects) ? data.objects : [];
+    const mapped = objects
+      .map(o => ({ name: YOLO_CLASS_MAP[o.class_name] || '', score: Number(o.score) || 0 }))
+      .filter(o => !!o.name && o.score >= 0.35);
+    const foods: string[] = [];
+    const liquids: string[] = [];
+    let maxConfidence = 0;
+    for (const m of mapped) {
+      maxConfidence = Math.max(maxConfidence, m.score);
+      // Classes de líquido (copos/garrafas) entram como líquidos
+      if (m.name === 'água' || m.name === 'vinho') liquids.push(m.name);
+      else foods.push(m.name);
+    }
+    return { foods, liquids, maxConfidence };
+  } catch (_e) {
+    return null;
+  }
+}
 
 async function callOllamaNormalizer(rawItems: Array<{name: string; grams?: number; ml?: number; method?: string}>): Promise<Array<{name: string; grams?: number; ml?: number; method?: string}>> {
   try {
@@ -59,21 +117,32 @@ async function callOllamaNormalizer(rawItems: Array<{name: string; grams?: numbe
   return rawItems;
 }
 
-// 📸 Função auxiliar para converter imagem URL em base64 (retornando também o MIME)
-async function fetchImageAsBase64(url: string): Promise<{ base64: string; mime: string }> {
+// 📸 Função auxiliar para converter imagem (URL http(s) ou data URL) em base64 (retornando também o MIME)
+async function fetchImageAsBase64(urlOrData: string): Promise<{ base64: string; mime: string }> {
   try {
-    const response = await fetch(url, {
+    // Suporte a data URL: data:image/png;base64,XXXX
+    if ((urlOrData || '').startsWith('data:')) {
+      const commaIdx = urlOrData.indexOf(',');
+      if (commaIdx === -1) throw new Error('Data URL inválida');
+      const header = urlOrData.substring(0, commaIdx);
+      const data = urlOrData.substring(commaIdx + 1);
+      let mime = 'image/jpeg';
+      const m = header.match(/^data:([^;]+)(;base64)?/i);
+      if (m && m[1]) mime = m[1];
+      return { base64: data, mime };
+    }
+
+    // Caso padrão: buscar por HTTP(S)
+    const response = await fetch(urlOrData, {
       headers: {
-        // Alguns CDNs bloqueiam agentes default; definir um user-agent ajuda a liberar
         'User-Agent': 'Mozilla/5.0 (compatible; SofiaAI/1.0; +https://supabase.com)'
       }
     });
     const buffer = await response.arrayBuffer();
     const base64 = btoa(String.fromCharCode(...new Uint8Array(buffer)));
-    // Detectar MIME pelo header ou pela extensão
     let mime = response.headers.get('content-type') || '';
     if (!mime) {
-      const lower = url.toLowerCase();
+      const lower = urlOrData.toLowerCase();
       if (lower.endsWith('.png')) mime = 'image/png';
       else if (lower.endsWith('.webp')) mime = 'image/webp';
       else if (lower.endsWith('.gif')) mime = 'image/gif';
@@ -485,6 +554,76 @@ function removeDuplicatesAndEstimatePortions(foods: string[]): Array<{nome: stri
   }));
 }
 
+// 🏷️ Função para enviar previsões para Label Studio (validação)
+async function sendToLabelStudio(imageUrl: string, detectedFoods: any[], confidence: number, userId: string): Promise<{ taskId?: string; success: boolean; error?: string }> {
+  if (!labelStudioEnabled || !labelStudioUrl || !labelStudioToken || !labelStudioProjectId) {
+    return { success: false, error: 'Label Studio não configurado' };
+  }
+
+  try {
+    // Preparar previsões no formato Label Studio
+    const predictions = detectedFoods.map((food, index) => ({
+      id: `prediction_${index}`,
+      score: confidence,
+      result: [{
+        id: `result_${index}`,
+        type: 'choices',
+        value: {
+          choices: [food.name || food.nome || food]
+        },
+        from_name: 'food_detection',
+        to_name: 'image'
+      }]
+    }));
+
+    // Criar task no Label Studio
+    const taskData = {
+      data: {
+        image: imageUrl
+      },
+      predictions: predictions,
+      meta: {
+        userId: userId,
+        confidence: confidence,
+        source: 'sofia-ai'
+      }
+    };
+
+    const response = await fetch(`${labelStudioUrl}/api/tasks/`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Token ${labelStudioToken}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        project: labelStudioProjectId,
+        ...taskData
+      })
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('❌ Erro ao enviar para Label Studio:', response.status, errorText);
+      return { success: false, error: `HTTP ${response.status}: ${errorText}` };
+    }
+
+    const result = await response.json();
+    console.log('✅ Enviado para Label Studio:', result.id);
+    
+    return { 
+      success: true, 
+      taskId: result.id.toString() 
+    };
+
+  } catch (error) {
+    console.error('❌ Erro ao enviar para Label Studio:', error);
+    return { 
+      success: false, 
+      error: error.message || 'Erro desconhecido' 
+    };
+  }
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -532,21 +671,33 @@ serve(async (req) => {
     let confidence = 0;
     let estimatedCalories = 0;
     
-    // 👁️ Usar Google AI Vision (Gemini) para análise inicial
-    console.log('🤖 Chamando Google AI para análise inicial...');
-    
-    try {
-      const img = await fetchImageAsBase64(imageUrl);
-      const visionResponse = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:generateContent?key=${googleAIApiKey}`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          contents: [{
-            parts: [
-              {
-                text: `Analise esta imagem de comida detalhadamente e retorne APENAS um JSON válido:
+    // 👁️ Primeiro tenta YOLO (se habilitado). Se não suficiente, usa Gemini.
+    let yoloTried = false;
+    if (yoloEnabled) {
+      console.log('🦾 Tentando YOLO microserviço...');
+      const yolo = await tryYoloDetect(imageUrl);
+      if (yolo && (yolo.foods.length > 0 || yolo.liquids.length > 0)) {
+        detectedFoods = [...yolo.foods];
+        detectedLiquids = [...yolo.liquids];
+        isFood = detectedFoods.length > 0 || detectedLiquids.length > 0;
+        confidence = Math.max(confidence, yolo.maxConfidence || 0);
+        console.log('✅ YOLO detectou:', { detectedFoods, detectedLiquids, confidence });
+      }
+      yoloTried = true;
+    }
+
+    // 👁️ Usar Google AI Vision (Gemini) para análise inicial quando YOLO não cobriu bem e houver API key
+    if ((!isFood || confidence < 0.6) && googleAIApiKey) {
+      console.log('🤖 Chamando Google AI para análise inicial...');
+      try {
+        const img = await fetchImageAsBase64(imageUrl);
+        const visionResponse = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:generateContent?key=${googleAIApiKey}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{
+              parts: [
+                { text: `Analise esta imagem de comida detalhadamente e retorne APENAS um JSON válido:
 {
   "is_food": true/false,
   "confidence": 0.0-1.0,
@@ -566,66 +717,39 @@ REGRAS IMPORTANTES:
 - Confidence entre 0.7-0.95 para comida clara
 - Estime calorias realistas (200-1200) incluindo líquidos
 - Seja específico sobre cores e tipos (ex: "suco de laranja", "refrigerante cola")
-- Identifique pelo menos 2-3 alimentos quando possível`
-              },
-              {
-                inline_data: {
-                  mime_type: img.mime,
-                  data: img.base64
-                }
-              }
-            ]
-          }],
-          generationConfig: {
-            temperature: 0.1,
-            maxOutputTokens: 1000
-          }
-        })
-      });
+- Identifique pelo menos 2-3 alimentos quando possível` },
+                { inline_data: { mime_type: img.mime, data: img.base64 } }
+              ]
+            }],
+            generationConfig: { temperature: 0.1, maxOutputTokens: 1000 }
+          })
+        });
 
-      if (!visionResponse.ok) {
-        throw new Error(`Google AI error: ${visionResponse.status}`);
-      }
-
-      const visionData = await visionResponse.json();
-      console.log('📊 Resposta do Google AI:', visionData);
-
-      const responseText = visionData.candidates?.[0]?.content?.parts?.[0]?.text || '';
-      console.log('📝 Texto extraído do Google AI:', responseText);
-
-      // Parse da resposta JSON do Google AI
-      try {
-        const jsonMatch = responseText.match(/```json\s*([\s\S]*?)\s*```/) || responseText.match(/\{[\s\S]*\}/);
-        if (jsonMatch) {
-          const analysisData = JSON.parse(jsonMatch[1] || jsonMatch[0]);
-          isFood = analysisData.is_food || false;
-          confidence = analysisData.confidence || 0;
-          detectedFoods = analysisData.foods_detected || [];
-          detectedLiquids = analysisData.liquids_detected || [];
-          estimatedCalories = analysisData.estimated_calories || 0;
-          
-          console.log('✅ Análise inicial Google AI:', { isFood, confidence, detectedFoods, detectedLiquids, estimatedCalories });
-        }
-      } catch (parseError) {
-        console.log('❌ Erro ao parsear resposta JSON do Google AI:', parseError);
-        isFood = false;
-      }
-
-      // 🚀 Análise detalhada adicional COM GEMINI (substitui GPT)
-      if (isFood) {
-        console.log('🧠 Chamando Gemini para análise detalhada...');
-
+        if (!visionResponse.ok) throw new Error(`Google AI error: ${visionResponse.status}`);
+        const visionData = await visionResponse.json();
+        const responseText = visionData.candidates?.[0]?.content?.parts?.[0]?.text || '';
         try {
-          const detailedResponse = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:generateContent?key=${googleAIApiKey}`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              contents: [{
-                parts: [
-                  {
-                    text: `Analise esta mesma imagem e retorne APENAS JSON válido com alto detalhamento e PORÇÕES ESTIMADAS:
+          const jsonMatch = responseText.match(/```json\s*([\s\S]*?)\s*```/) || responseText.match(/\{[\s\S]*\}/);
+          if (jsonMatch) {
+            const analysisData = JSON.parse(jsonMatch[1] || jsonMatch[0]);
+            isFood = analysisData.is_food || false;
+            confidence = analysisData.confidence || 0;
+            detectedFoods = analysisData.foods_detected || [];
+            detectedLiquids = analysisData.liquids_detected || [];
+            estimatedCalories = analysisData.estimated_calories || 0;
+          }
+        } catch (_parseError) {
+          isFood = false;
+        }
+
+        if (isFood) {
+          try {
+            const detailedResponse = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:generateContent?key=${googleAIApiKey}`, {
+              method: 'POST', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                contents: [{
+                  parts: [
+                    { text: `Analise esta mesma imagem e retorne APENAS JSON válido com alto detalhamento e PORÇÕES ESTIMADAS:
 {
   "detailed_foods": ["item1", "item2", ...],
   "detailed_liquids": ["bebida1", "bebida2", ...],
@@ -633,22 +757,7 @@ REGRAS IMPORTANTES:
   "seasonings": ["tempero1", "molho1", ...],
   "estimated_calories": numero,
   "confidence": 0.0-1.0,
-  "items": [
-    {
-      "name": "arroz branco",
-      "grams": 120,
-      "ml": null,
-      "method": "cozido",
-      "confidence": 0.85
-    },
-    {
-      "name": "suco de laranja",
-      "grams": null,
-      "ml": 200,
-      "method": "liquido",
-      "confidence": 0.9
-    }
-  ]
+  "items": [{"name":"arroz branco","grams":120,"ml":null,"method":"cozido","confidence":0.85},{"name":"suco de laranja","grams":null,"ml":200,"method":"liquido","confidence":0.9}] 
 }
 
 BASE (pt-BR): ${foodKnowledge}
@@ -658,142 +767,39 @@ REGRAS:
 - Seja específico nos tipos (ex.: feijão preto, arroz branco, frango grelhado, salada verde)
 - Estime gramas (sólidos) ou mL (líquidos) realistas por item
 - Não some itens duplicados; prefira mesclar em um único item com quantidade total
-- Não use markdown, não use comentários, apenas JSON`
-                  },
-                  {
-                    inline_data: {
-                      mime_type: img.mime,
-                      data: img.base64
-                    }
-                  }
-                ]
-              }],
-              generationConfig: {
-                temperature: 0.1,
-                maxOutputTokens: 1200
-              }
-            })
-          });
+- Não use markdown, não use comentários, apenas JSON` },
+                    { inline_data: { mime_type: img.mime, data: img.base64 } }
+                  ]
+                }],
+                generationConfig: { temperature: 0.1, maxOutputTokens: 1200 }
+              })
+            });
 
-          if (detailedResponse.ok) {
-            const det = await detailedResponse.json();
-            const detailText = det.candidates?.[0]?.content?.parts?.[0]?.text || '';
-            try {
+            if (detailedResponse.ok) {
+              const det = await detailedResponse.json();
+              const detailText = det.candidates?.[0]?.content?.parts?.[0]?.text || '';
               const detailJsonMatch = detailText.match(/```json\s*([\s\S]*?)\s*```/) || detailText.match(/\{[\s\S]*\}/);
               if (detailJsonMatch) {
                 const detailed = JSON.parse(detailJsonMatch[1] || detailJsonMatch[0]);
-                const allFoods = [
-                  ...detectedFoods,
-                  ...detectedLiquids,
-                  ...(detailed.detailed_foods || []),
-                  ...(detailed.detailed_liquids || []),
-                  ...(detailed.seasonings || [])
-                ];
-                detectedFoods = removeDuplicatesAndEstimatePortions(allFoods.filter((x: string) => x && x.length > 0));
+                const extraFoods = [ ...(detailed.detailed_foods || []), ...(detailed.detailed_liquids || []), ...(detailed.seasonings || []) ];
+                const combined = [...(Array.isArray(detectedFoods) ? detectedFoods : []), ...extraFoods];
+                detectedFoods = removeDuplicatesAndEstimatePortions(combined.filter((x: string) => x && x.length > 0));
                 estimatedCalories = Math.max(estimatedCalories, detailed.estimated_calories || 0);
                 confidence = Math.max(confidence, detailed.confidence || 0);
-
-                // Preferir itens com porção estimada pelo Gemini, se existir e confiável
-                const aiItemsRaw: Array<{name: string; grams?: number|null; ml?: number|null; method?: string; confidence?: number}> = Array.isArray(detailed.items) ? detailed.items : [];
-                const aiItems: Array<{name: string; grams?: number; ml?: number; method?: string; confidence?: number}> = aiItemsRaw
-                  .filter((it) => typeof it?.name === 'string' && (it.grams || it.ml))
-                  .map((it) => ({
-                    name: it.name,
-                    grams: it.grams ?? undefined,
-                    ml: it.ml ?? undefined,
-                    method: it.method,
-                    confidence: typeof it.confidence === 'number' ? it.confidence : undefined
-                  }));
-
-                // Sanear valores: clamps e normalização
-                function clamp(num: number, min: number, max: number): number { return Math.max(min, Math.min(max, num)); }
-                const aiItemsClean = aiItems.map((it) => {
-                  const isLiquid = isLiquidName(it.name) || (it.method || '').toLowerCase() === 'liquido' || (it.ml && it.ml > 0);
-                  const grams = it.grams && !isLiquid ? clamp(Math.round(it.grams), 10, 800) : undefined;
-                  const ml = it.ml && isLiquid ? clamp(Math.round(it.ml), 30, 1000) : undefined;
-                  return { ...it, grams, ml };
-                });
-
-                // Remover entradas de baixa confiança no modo estrito
-                const aiItemsFiltered = portionMode === 'ai_strict'
-                  ? aiItemsClean.filter((it) => (it.confidence ?? 1) >= minPortionConfidence)
-                  : aiItemsClean;
-
-                // Se muitos itens ou muito extremos, limitar total
-                let totalWeight = aiItemsFiltered.reduce((acc, it) => acc + (it.grams || 0), 0);
-                if (totalWeight > 1500) {
-                  const scale = 1500 / totalWeight;
-                  aiItemsFiltered.forEach((it) => { if (it.grams) it.grams = Math.round(it.grams * scale); });
-                }
-
-                // Deduplicar/normalizar itens para evitar somas duplicadas (ex.: carne cozida + ensopada)
-                function canonicalizeForCalc(name: string, method?: string): string {
-                  const n = (name || '').toLowerCase();
-                  const m = (method || '').toLowerCase();
-                  if (n.includes('carne')) {
-                    if (n.includes('cozid') || n.includes('ensopad') || m.includes('cozid')) return 'carne bovina cozida';
-                    if (n.includes('grelh') || n.includes('assad') || m.includes('grelh')) return 'carne bovina grelhada';
-                    return 'carne bovina cozida';
-                  }
-                  if (n.includes('farofa')) return 'farofa pronta';
-                  if (n.includes('batata') && !n.includes('frita')) return 'batata cozida';
-                  if (n.includes('salada')) return 'salada verde';
-                  if (n.includes('tomate')) return 'tomate cru';
-                  return name;
-                }
-
-                const dedup = new Map<string, { name: string; grams?: number; ml?: number; method?: string; confidence?: number }>();
-                const hasOil = aiItemsFiltered.some(it => (it.name||'').toLowerCase().includes('óleo') || (it.name||'').toLowerCase().includes('oleo'));
-                for (const it of aiItemsFiltered) {
-                  let key = canonicalizeForCalc(it.name, it.method);
-                  // Heurística: se há "óleo" e o item é batata genérica, considere "batata frita"
-                  if (hasOil) {
-                    const lowerKey = key.toLowerCase();
-                    if (lowerKey.includes('batata') && !lowerKey.includes('frita') && !lowerKey.includes('cozid')) {
-                      key = 'batata frita';
-                    }
-                  }
-                  const prev = dedup.get(key);
-                  if (prev) {
-                    prev.grams = (prev.grams || 0) + (it.grams || 0);
-                    prev.ml = (prev.ml || 0) + (it.ml || 0);
-                  } else {
-                    dedup.set(key, { ...it, name: key });
-                  }
-                }
-                // Se batata frita está presente, não contar "óleo" separadamente (evita dupla contagem)
-                if (dedup.has('batata frita')) {
-                  for (const k of Array.from(dedup.keys())) {
-                    const lk = k.toLowerCase();
-                    if (lk.includes('óleo') || lk.includes('oleo')) dedup.delete(k);
-                  }
-                }
-                const aiItemsDeduped = Array.from(dedup.values());
-
-                // Persistir itens AI deduplicados em variável para uso na chamada determinística
-                (globalThis as any).__AI_PORTION_ITEMS__ = aiItemsDeduped;
-                console.log('🎯 Análise combinada final (Gemini):', { totalItems: detectedFoods.length, estimatedCalories, confidence });
               }
-            } catch (e) {
-              console.log('⚠️ Erro ao parsear JSON detalhado do Gemini, mantendo análise inicial:', e);
-              const allFoods = [...detectedFoods, ...detectedLiquids];
-              detectedFoods = removeDuplicatesAndEstimatePortions(allFoods.filter(item => item && item.length > 0));
             }
-          } else {
-            console.log('⚠️ Gemini detalhado indisponível, mantendo análise inicial');
-            const allFoods = [...detectedFoods, ...detectedLiquids];
-            detectedFoods = removeDuplicatesAndEstimatePortions(allFoods.filter(item => item && item.length > 0));
+          } catch (_e) {
+            // mantém análise inicial
           }
-        } catch (err) {
-          console.log('⚠️ Falha na análise detalhada com Gemini:', err);
-          const allFoods = [...detectedFoods, ...detectedLiquids];
-          detectedFoods = removeDuplicatesAndEstimatePortions(allFoods.filter(item => item && item.length > 0));
         }
-      }
 
-    } catch (error) {
-      console.log('❌ Erro na análise da imagem:', error);
-      isFood = false;
+      } catch (error) {
+        console.log('❌ Erro na análise da imagem:', error);
+        isFood = false;
+      }
+    } else {
+      // YOLO já cobriu
+      // nada a fazer
     }
 
 
@@ -844,7 +850,7 @@ Ou você pode me contar o que está comendo! 😉✨`,
         : detectedFoods.map(food => `• ${food}`).join('\n');
     }
 
-    // 🔢 Integração determinística: chamar nutrition-calc com itens detectados
+    // 🔢 Integração determinística: calcular localmente (TACO-like) com itens detectados
     let calcItems: Array<{ name: string; grams?: number; ml?: number; state?: string }>; 
     const aiPortionItems = (globalThis as any).__AI_PORTION_ITEMS__ as Array<{name: string; grams?: number; ml?: number; method?: string}> | undefined;
     if (aiPortionItems && aiPortionItems.length > 0) {
@@ -878,39 +884,34 @@ Ou você pode me contar o que está comendo! 😉✨`,
       }
     }
 
-    // Cálculo determinístico via nutrition-calc (fonte única em modo estrito)
-    let calcTotals: any = null;
-    let calcResolved: any[] | null = null;
+    // Cálculo determinístico local (somatório antes de arredondar, sem IA)
+    let localDeterministic: any = null;
     try {
-      const { data, error } = await supabase.functions.invoke('nutrition-calc', { body: { items: calcItems, locale: 'pt-BR' } });
-      if (!error && data) {
-        calcTotals = data.totals || null;
-        calcResolved = data.resolved || null;
+      const itemsForLocal = (calcItems || [])
+        .filter(it => !!it.name && (Number(it.grams) || 0) > 0)
+        .map(it => ({ name: String(it.name), grams: Number(it.grams) }));
+      if (itemsForLocal.length > 0) {
+        localDeterministic = calcNutrition(itemsForLocal);
       }
     } catch (e) {
-      console.log('⚠️ Erro ao invocar nutrition-calc:', e);
+      console.log('⚠️ Erro no cálculo determinístico local:', e);
     }
 
     let macrosBlock = '';
-    if (calcTotals) {
+    if (localDeterministic && localDeterministic.grams_total > 0) {
       // Cálculo por grama com base no peso efetivo total
-      let totalGrams = 0;
-      if (calcResolved) {
-        try {
-          totalGrams = calcResolved.reduce((acc: number, it: any) => acc + (Number(it.effective_grams) || 0), 0);
-        } catch (_e) { totalGrams = 0; }
-      }
+      const totalGrams = Number(localDeterministic.grams_total) || 0;
       const perGram = totalGrams > 0 ? {
-        kcal_pg: calcTotals.kcal / totalGrams,
-        protein_pg: calcTotals.protein_g / totalGrams,
-        carbs_pg: calcTotals.carbs_g / totalGrams,
-        fat_pg: calcTotals.fat_g / totalGrams,
-        fiber_pg: calcTotals.fiber_g / totalGrams,
+        kcal_pg: localDeterministic.totals.kcal / totalGrams,
+        protein_pg: localDeterministic.totals.protein / totalGrams,
+        carbs_pg: localDeterministic.totals.carbs / totalGrams,
+        fat_pg: localDeterministic.totals.fat / totalGrams,
+        fiber_pg: (localDeterministic.totals.fiber || 0) / totalGrams,
       } : null;
 
       const perGramText = perGram ? `\n- Por grama: ${perGram.kcal_pg.toFixed(2)} kcal/g, P ${perGram.protein_pg.toFixed(3)} g/g, C ${perGram.carbs_pg.toFixed(3)} g/g, G ${perGram.fat_pg.toFixed(3)} g/g` : '';
 
-      macrosBlock = `📊 Nutrientes (determinístico):\n- Calorias: ${Math.round(calcTotals.kcal)} kcal\n- Proteínas: ${calcTotals.protein_g.toFixed(1)} g\n- Carboidratos: ${calcTotals.carbs_g.toFixed(1)} g\n- Gorduras: ${calcTotals.fat_g.toFixed(1)} g\n- Fibras: ${calcTotals.fiber_g.toFixed(1)} g\n- Sódio: ${calcTotals.sodium_mg.toFixed(0)} mg${perGramText}\n\n`;
+      macrosBlock = `📊 Nutrientes (determinístico):\n- Calorias: ${Math.round(localDeterministic.totals.kcal)} kcal\n- Proteínas: ${localDeterministic.totals.protein.toFixed(1)} g\n- Carboidratos: ${localDeterministic.totals.carbs.toFixed(1)} g\n- Gorduras: ${localDeterministic.totals.fat.toFixed(1)} g\n- Fibras: ${Number(localDeterministic.totals.fiber || 0).toFixed(1)} g\n- Sódio: ${Number(localDeterministic.totals.sodium || 0).toFixed(0)} mg${perGramText}\n\n`;
     } else if (strictMode) {
       // Mensagem amigável pedindo gramas quando não há dados suficientes
       const neededList = (Array.isArray(detectedFoods) && detectedFoods.length > 0 && typeof detectedFoods[0] === 'object')
@@ -950,7 +951,19 @@ ${comboInfo}${foodList}
 ${macrosBlock}🤔 Esses alimentos estão corretos?`;
 
     // 💾 Salvar análise no banco ANTES da confirmação (corrigido para guest users)
-    let savedAnalysis = null;
+    let savedAnalysis: any = null;
+    
+    // 🏷️ Enviar para Label Studio se habilitado (validação)
+    let labelStudioResult: { taskId?: string; success: boolean; error?: string } = { success: false };
+    if (labelStudioEnabled && isFood && confidence >= 0.5) {
+      console.log('🏷️ Enviando para Label Studio para validação...');
+      labelStudioResult = await sendToLabelStudio(imageUrl, detectedFoods, confidence, userId);
+      if (labelStudioResult.success) {
+        console.log('✅ Task criada no Label Studio:', labelStudioResult.taskId);
+      } else {
+        console.log('⚠️ Falha ao enviar para Label Studio:', labelStudioResult.error);
+      }
+    }
     
     // Só salvar se não for usuário guest
     if (userId && userId !== 'guest') {
@@ -969,6 +982,7 @@ ${macrosBlock}🤔 Esses alimentos estão corretos?`;
         confirmed_by_user: false,
         confirmation_prompt_sent: true,
         confirmation_status: 'pending',
+        label_studio_task_id: labelStudioResult.taskId || null,
         created_at: new Date().toISOString()
       };
 
@@ -1014,6 +1028,21 @@ ${macrosBlock}🤔 Esses alimentos estão corretos?`;
       }
     }
 
+    // Determinar calorias finais: preferir determinístico quando disponível
+    const deterministicKcal = localDeterministic && localDeterministic.grams_total > 0 ? Math.round(localDeterministic.totals.kcal) : null;
+    const finalKcal = deterministicKcal ?? Math.round(estimatedCalories || 0);
+
+    // Aviso de densidade anômala quando flags density_too_low_* estiverem presentes
+    try {
+      if (localDeterministic && Array.isArray(localDeterministic.flags)) {
+        const hasDensityLow = localDeterministic.flags.some((f: string) => String(f).startsWith('density_too_low_'));
+        if (hasDensityLow) {
+          const density = (localDeterministic.totals.kcal || 0) / (localDeterministic.grams_total || 1);
+          console.warn('[Sofia] Density anomaly', { analysis_id: savedAnalysis?.id, density, flags: localDeterministic.flags, items: localDeterministic.details?.map((d:any)=>({name:d.name, grams:d.grams, key:d.key})) });
+        }
+      }
+    } catch (_e) { /* noop */ }
+
     return new Response(JSON.stringify({
       success: true,
       requires_confirmation: true,
@@ -1023,16 +1052,16 @@ ${macrosBlock}🤔 Esses alimentos estão corretos?`;
         personality: 'amigavel',
         foods_detected: detectedFoods,
         confidence: confidence,
-        estimated_calories: calcTotals ? Math.round(calcTotals.kcal) : estimatedCalories,
-        nutrition_totals: calcTotals || null,
+        estimated_calories: finalKcal,
+        nutrition_totals: localDeterministic && localDeterministic.grams_total > 0 ? localDeterministic : null,
         confirmation_required: true
       },
       food_detection: {
         foods_detected: detectedFoods,
         is_food: true,
         confidence: confidence,
-        estimated_calories: calcTotals ? Math.round(calcTotals.kcal) : estimatedCalories,
-        nutrition_totals: calcTotals || null,
+        estimated_calories: finalKcal,
+        nutrition_totals: localDeterministic && localDeterministic.grams_total > 0 ? localDeterministic : null,
         meal_type: userContext?.currentMeal || 'refeicao'
       },
       alimentos_identificados: detectedFoods // Para compatibilidade

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '../integrations/supabase/client';
 
 interface GoogleFitData {
@@ -7,8 +7,8 @@ interface GoogleFitData {
   data_date: string;
   steps_count?: number;
   distance_meters?: number;
-  calories_burned?: number;
-  active_minutes?: number;
+  calories_burned?: number; // ativas
+  active_minutes?: number;  // heart minutes
   heart_rate_avg?: number;
   heart_rate_max?: number;
   heart_rate_resting?: number;
@@ -20,19 +20,35 @@ interface GoogleFitData {
   created_at: string;
 }
 
-interface GoogleFitStats {
-  totalSteps: number;
-  totalDistance: number;
-  totalCalories: number;
-  avgHeartRate: number;
-  totalActiveMinutes: number;
-  avgSleepDuration: number;
-  workoutFrequency: number;
-  currentWeight?: number;
-  currentHeight?: number;
-  weightTrend?: number;
-  restingHeartRate?: number;
-  maxHeartRate?: number;
+export type Period = 'day' | 'week' | 'month';
+
+function getLocalDateString(d: Date, tz = 'America/Sao_Paulo') {
+  const fmt = new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' });
+  const [{ value: y }, , { value: m }, , { value: dd }] = fmt.formatToParts(d);
+  return `${y}-${m}-${dd}`;
+}
+
+function getPeriodRange(period: Period, tz = 'America/Sao_Paulo') {
+  const now = new Date();
+  const todayStr = getLocalDateString(now, tz);
+  if (period === 'day') {
+    return { start: todayStr, end: todayStr };
+  }
+  if (period === 'week') {
+    const dow = new Intl.DateTimeFormat('en-US', { timeZone: tz, weekday: 'short' }).format(now);
+    // Calcular segunda-feira da semana corrente
+    const jsDay = now.getDay(); // 0 dom ... 6 sáb
+    const delta = (jsDay + 6) % 7; // dias desde segunda
+    const start = new Date(now);
+    start.setDate(now.getDate() - delta);
+    const end = new Date(start);
+    end.setDate(start.getDate() + 6);
+    return { start: getLocalDateString(start, tz), end: getLocalDateString(end, tz) };
+  }
+  // month
+  const start = new Date(now.getFullYear(), now.getMonth(), 1);
+  const end = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+  return { start: getLocalDateString(start, tz), end: getLocalDateString(end, tz) };
 }
 
 export function useGoogleFitData() {
@@ -40,240 +56,152 @@ export function useGoogleFitData() {
   const [error, setError] = useState<string | null>(null);
   const [data, setData] = useState<GoogleFitData[]>([]);
   const [isConnected, setIsConnected] = useState(false);
+  const [lastSync, setLastSync] = useState<string | null>(null);
 
-  // Buscar dados reais do Google Fit
   const fetchGoogleFitData = async () => {
     try {
       setLoading(true);
       setError(null);
-
-      // Verificar se usuário está autenticado
       const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
-        throw new Error('Usuário não autenticado');
+      if (!user) throw new Error('Usuário não autenticado');
+
+      const { data: tokenRow } = await supabase
+        .from('google_fit_tokens')
+        .select('access_token, expires_at')
+        .eq('user_id', user.id)
+        .maybeSingle();
+
+      if (!tokenRow) {
+        setData([]);
+        setIsConnected(false);
+        setError('Conecte o Google Fit para ver seus dados reais');
+        setLastSync(null);
+        return;
       }
 
-      // Buscar dados dos últimos 30 dias
-      const startDate = new Date();
-      startDate.setDate(startDate.getDate() - 30);
-      
-      // Usar dados de exemplo já que google_fit_data não existe na base atual
-      console.log('Usando dados de exemplo do Google Fit');
-      setError('Usando dados de exemplo. Conecte o Google Fit para dados reais.');
-      setData(generateFallbackData());
-      setIsConnected(false);
+      const { data: fitData, error: dbError } = await supabase
+        .from('google_fit_data')
+        .select('*')
+        .eq('user_id', user.id)
+        .gte('data_date', getLocalDateString(new Date(Date.now() - 31 * 24 * 60 * 60 * 1000)))
+        .order('data_date', { ascending: true });
 
+      if (dbError) throw dbError;
+
+      setData(fitData || []);
+      setIsConnected(true);
+      const last = (fitData || []).reduce<string | null>((acc, row) => {
+        if (!row.sync_timestamp) return acc;
+        if (!acc) return row.sync_timestamp;
+        return new Date(row.sync_timestamp) > new Date(acc) ? row.sync_timestamp : acc;
+      }, null);
+      setLastSync(last);
     } catch (err: any) {
-      console.error('Erro ao carregar dados Google Fit:', err);
       setError(err.message || 'Erro ao carregar dados');
-      setData(generateFallbackData());
+      setData([]);
+      setIsConnected(false);
+      setLastSync(null);
     } finally {
       setLoading(false);
     }
   };
 
-  // Gerar dados de exemplo quando não há dados reais
-  const generateFallbackData = (): GoogleFitData[] => {
-    const days = Array.from({ length: 14 }, (_, i) => {
-      const date = new Date();
-      date.setDate(date.getDate() - i);
-      return {
-        id: `fallback-${i}`,
-        user_id: 'example',
-        data_date: date.toISOString().split('T')[0],
-        steps_count: Math.floor(Math.random() * 5000) + 6000,
-        calories_burned: Math.floor(Math.random() * 300) + 150,
-        distance_meters: Math.floor((Math.random() * 8 + 2) * 1000),
-        active_minutes: Math.floor(Math.random() * 60) + 30,
-        heart_rate_avg: Math.floor(Math.random() * 15) + 65,
-        heart_rate_max: Math.floor(Math.random() * 30) + 140,
-        heart_rate_resting: Math.floor(Math.random() * 10) + 55,
-        sleep_duration_hours: Math.round((6.5 + Math.random() * 2) * 10) / 10,
-        weight_kg: 70 + (Math.random() - 0.5) * 4,
-        height_cm: 170 + (Math.random() - 0.5) * 20,
-        sync_timestamp: date.toISOString(),
-        created_at: date.toISOString(),
-      };
-    });
-    return days.reverse();
-  };
+  useEffect(() => { fetchGoogleFitData(); }, []);
 
-  useEffect(() => {
-    fetchGoogleFitData();
-  }, []);
-
-  const calculateStats = (data: GoogleFitData[]): GoogleFitStats => {
-    if (!data.length) {
+  const calculateStats = (rows: GoogleFitData[]) => {
+    if (!rows.length) {
       return {
         totalSteps: 0,
         totalDistance: 0,
         totalCalories: 0,
         avgHeartRate: 0,
         totalActiveMinutes: 0,
-        avgSleepDuration: 0,
-        workoutFrequency: 0
+        avgSleepHours: 0,
       };
     }
-
-    // Calcular tendência de peso
-    const weightData = data.filter(d => d.weight_kg).sort((a, b) => new Date(a.data_date).getTime() - new Date(b.data_date).getTime());
-    let weightTrend = 0;
-    if (weightData.length >= 2) {
-      const firstWeight = weightData[0].weight_kg!;
-      const lastWeight = weightData[weightData.length - 1].weight_kg!;
-      weightTrend = lastWeight - firstWeight;
-    }
-
-    // Obter peso e altura mais recentes
-    const latestWeightEntry = data.find(d => d.weight_kg);
-    const latestHeightEntry = data.find(d => d.height_cm);
-
-    // Calcular médias de frequência cardíaca
-    const heartRateData = data.filter(d => d.heart_rate_avg && d.heart_rate_avg > 0);
-    const restingHeartRateData = data.filter(d => d.heart_rate_resting && d.heart_rate_resting > 0);
-    const maxHeartRateData = data.filter(d => d.heart_rate_max && d.heart_rate_max > 0);
-
-    return {
-      totalSteps: data.reduce((sum, d) => sum + (d.steps_count || 0), 0),
-      totalDistance: Math.round((data.reduce((sum, d) => sum + (d.distance_meters || 0), 0) / 1000) * 10) / 10,
-      totalCalories: data.reduce((sum, d) => sum + (d.calories_burned || 0), 0),
-      avgHeartRate: heartRateData.length > 0 
-        ? Math.round(heartRateData.reduce((sum, d) => sum + (d.heart_rate_avg || 0), 0) / heartRateData.length)
-        : 0,
-      totalActiveMinutes: data.reduce((sum, d) => sum + (d.active_minutes || 0), 0),
-      avgSleepDuration: Math.round((data.reduce((sum, d) => sum + (d.sleep_duration_hours || 0), 0) / data.length) * 10) / 10,
-      workoutFrequency: Math.max(Math.floor(data.filter(d => (d.active_minutes || 0) > 30).length), 0),
-      currentWeight: latestWeightEntry?.weight_kg,
-      currentHeight: latestHeightEntry?.height_cm,
-      weightTrend: Math.round(weightTrend * 10) / 10,
-      restingHeartRate: restingHeartRateData.length > 0 
-        ? Math.round(restingHeartRateData.reduce((sum, d) => sum + (d.heart_rate_resting || 0), 0) / restingHeartRateData.length)
-        : undefined,
-      maxHeartRate: maxHeartRateData.length > 0 
-        ? Math.round(maxHeartRateData.reduce((sum, d) => sum + (d.heart_rate_max || 0), 0) / maxHeartRateData.length)
-        : undefined,
-    };
+    const totalSteps = rows.reduce((s, d) => s + (d.steps_count || 0), 0);
+    const totalDistance = Math.round((rows.reduce((s, d) => s + (d.distance_meters || 0), 0) / 1000) * 10) / 10;
+    const totalCalories = rows.reduce((s, d) => s + (d.calories_burned || 0), 0);
+    const hrVals = rows.map(r => r.heart_rate_avg || 0).filter(v => v > 0);
+    const avgHeartRate = hrVals.length ? Math.round(hrVals.reduce((a, b) => a + b, 0) / hrVals.length) : 0;
+    const totalActiveMinutes = rows.reduce((s, d) => s + (d.active_minutes || 0), 0);
+    const avgSleepHours = rows.length ? Math.round((rows.reduce((s, d) => s + (d.sleep_duration_hours || 0), 0) / rows.length) * 10) / 10 : 0;
+    return { totalSteps, totalDistance, totalCalories, avgHeartRate, totalActiveMinutes, avgSleepHours };
   };
 
-  const weeklyStats = calculateStats(data.slice(-7));
-  const monthlyStats = {
-    ...calculateStats(data),
-    // Multiplicar apenas dados cumulativos, não médias
-    totalSteps: calculateStats(data).totalSteps,
-    totalDistance: calculateStats(data).totalDistance,
-    totalCalories: calculateStats(data).totalCalories,
-    totalActiveMinutes: calculateStats(data).totalActiveMinutes,
-  };
+  // Metas (fallback localStorage até integrarmos tabela user_goals)
+  function getLocalGoals() {
+    try {
+      const raw = localStorage.getItem('user_goals');
+      if (!raw) return { steps: 10000, calories: 500, activeMinutes: 30, sleep: 8 };
+      const g = JSON.parse(raw);
+      return {
+        steps: Number(g.stepsGoal ?? 10000),
+        calories: Number(g.caloriesGoal ?? 500),
+        activeMinutes: Number(g.activeMinutesGoal ?? 30),
+        sleep: Number(g.sleepGoal ?? 8),
+      };
+    } catch { return { steps: 10000, calories: 500, activeMinutes: 30, sleep: 8 }; }
+  }
 
-  const getChartData = () => {
-    return {
-      stepsData: data.map(d => ({
-        date: d.data_date,
-        value: d.steps_count || 0,
-        formatted: new Date(d.data_date).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })
-      })),
-      caloriesData: data.map(d => ({
-        date: d.data_date,
-        value: d.calories_burned || 0,
-        formatted: new Date(d.data_date).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })
-      })),
-      heartRateData: data.map(d => ({
-        date: d.data_date,
-        avg: d.heart_rate_avg || 0,
-        max: d.heart_rate_max || 0,
-        resting: d.heart_rate_resting || 0,
-        formatted: new Date(d.data_date).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })
-      })),
-      sleepData: data.map(d => ({
-        date: d.data_date,
-        duration: d.sleep_duration_hours || 0,
-        quality: 4, // Default sleep quality score
-        formatted: new Date(d.data_date).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })
-      })),
-      activityData: data.map(d => ({
-        date: d.data_date,
-        minutes: d.active_minutes || 0,
-        distance: (d.distance_meters || 0) / 1000,
-        formatted: new Date(d.data_date).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })
-      })),
-      weightData: data.filter(d => d.weight_kg).map(d => ({
-        date: d.data_date,
-        weight: d.weight_kg!,
-        formatted: new Date(d.data_date).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })
-      })),
-      // Dados integrados para gráficos avançados
-      dailyData: data.map(d => ({
-        date: d.data_date,
-        steps: d.steps_count || 0,
-        calories: d.calories_burned || 0,
-        distance: (d.distance_meters || 0) / 1000,
-        heartRate: d.heart_rate_avg || 0,
-        activeMinutes: d.active_minutes || 0,
-        sleepHours: d.sleep_duration_hours || 0,
-        weight: d.weight_kg
-      }))
-    };
-  };
-
-  // Dados para gráficos avançados
-  const advancedData = {
-    dailyData: getChartData().dailyData,
-    weeklyStats,
-    healthMetrics: {
-      restingHeartRate: weeklyStats.restingHeartRate,
-      maxHeartRate: weeklyStats.maxHeartRate,
-      bmi: weeklyStats.currentWeight && weeklyStats.currentHeight 
-        ? Math.round((weeklyStats.currentWeight / Math.pow((weeklyStats.currentHeight / 100), 2)) * 100) / 100
-        : undefined,
-    }
-  };
+  function computeScoreForPeriod(rows: GoogleFitData[]) {
+    if (!rows.length) return 0;
+    const goals = getLocalGoals();
+    const days = rows.length;
+    const stepsDays = rows.filter(r => (r.steps_count || 0) >= goals.steps).length;
+    const caloriesDays = rows.filter(r => (r.calories_burned || 0) >= goals.calories).length;
+    const activeDays = rows.filter(r => (r.active_minutes || 0) >= goals.activeMinutes).length;
+    const sleepDays = rows.filter(r => (r.sleep_duration_hours || 0) >= goals.sleep).length;
+    const pctSteps = (stepsDays / days) * 100;
+    const pctCalories = (caloriesDays / days) * 100;
+    const pctActive = (activeDays / days) * 100;
+    const pctSleep = (sleepDays / days) * 100;
+    return Math.round((pctSteps + pctCalories + pctActive + pctSleep) / 4);
+  }
 
   return {
     data,
     loading,
     error,
-    weeklyStats,
-    monthlyStats,
     isConnected,
-    chartData: getChartData(),
-    advancedData,
+    lastSync,
+    calculateStats,
+    getPeriodRange,
     refetch: fetchGoogleFitData,
-    checkConnection: () => {
-      const hasToken = localStorage.getItem('google_fit_access_token');
-      setIsConnected(!!hasToken);
-      return !!hasToken;
-    },
-    syncData: async () => {
+    async checkConnection() {
       try {
-        const accessToken = localStorage.getItem('google_fit_access_token');
-        const refreshToken = localStorage.getItem('google_fit_refresh_token');
-        
-        if (!accessToken) {
-          throw new Error('Token do Google Fit não encontrado');
-        }
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return false;
+        const { data: tokenData } = await supabase
+          .from('google_fit_tokens')
+          .select('expires_at')
+          .eq('user_id', user.id)
+          .maybeSingle();
+        if (!tokenData) return false;
+        return new Date(tokenData.expires_at) > new Date();
+      } catch { return false; }
+    },
+    async syncData() {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('Usuário não autenticado');
+      const { data: tokenData } = await supabase
+        .from('google_fit_tokens')
+        .select('access_token, refresh_token, expires_at')
+        .eq('user_id', user.id)
+        .maybeSingle();
+      if (!tokenData) throw new Error('Token do Google Fit não encontrado. Conecte novamente.');
+      if (new Date(tokenData.expires_at) < new Date()) throw new Error('Token expirado. Conecte novamente ao Google Fit.');
 
-        const { data: syncResult, error: syncError } = await supabase.functions.invoke('google-fit-sync', {
-          body: {
-            access_token: accessToken,
-            refresh_token: refreshToken,
-            date_range: {
-              startDate: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-              endDate: new Date().toISOString().split('T')[0]
-            }
-          }
-        });
-
-        if (syncError) {
-          throw syncError;
-        }
-
-        // Recarregar dados após sincronização
-        await fetchGoogleFitData();
-        return syncResult;
-      } catch (err: any) {
-        console.error('Erro na sincronização:', err);
-        throw err;
-      }
-    }
+      const end = getLocalDateString(new Date());
+      const start = getLocalDateString(new Date(Date.now() - 7 * 24 * 60 * 60 * 1000));
+      const { data: syncResult, error: syncError } = await supabase.functions.invoke('google-fit-sync', {
+        body: { access_token: tokenData.access_token, refresh_token: tokenData.refresh_token, date_range: { startDate: start, endDate: end } }
+      });
+      if (syncError) throw syncError;
+      await fetchGoogleFitData();
+      return syncResult;
+    },
+    // score dinâmico utilitário (para período filtrado no componente)
+    computeScoreForPeriod,
   };
 }

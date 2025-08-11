@@ -1,489 +1,421 @@
 import React from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
 import { motion } from 'framer-motion';
-import { 
-  LineChart, 
-  Line, 
-  AreaChart, 
-  Area, 
-  BarChart, 
-  Bar, 
-  XAxis, 
-  YAxis, 
-  CartesianGrid, 
-  Tooltip, 
-  ResponsiveContainer,
-  PieChart,
-  Pie,
-  Cell,
-  RadialBarChart,
-  RadialBar
-} from 'recharts';
-import { 
-  Activity, 
-  Heart, 
-  Footprints, 
-  Flame, 
-  Clock, 
-  Moon, 
-  TrendingUp,
-  Target,
-  Zap,
-  Scale
-} from 'lucide-react';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, AreaChart, Area, ReferenceLine, PieChart, Pie, Cell } from 'recharts';
+import { TrendingUp, Target, Activity, Heart, Moon, Zap, Calendar, Clock } from 'lucide-react';
 
-interface GoogleFitAdvancedData {
-  dailyData: Array<{
-    date: string;
-    steps: number;
-    calories: number;
-    distance: number;
-    heartRate: number;
-    activeMinutes: number;
-    sleepHours: number;
-    weight?: number;
-  }>;
-  weeklyStats: {
-    totalSteps: number;
-    totalCalories: number;
-    totalDistance: number;
-    avgHeartRate: number;
-    totalActiveMinutes: number;
-    avgSleepDuration: number;
-    currentWeight?: number;
-    weightTrend?: number;
-  };
-  healthMetrics: {
-    restingHeartRate?: number;
-    maxHeartRate?: number;
-    bmi?: number;
-    bodyFatPercentage?: number;
-  };
+interface GoogleFitData {
+  data_date: string;
+  steps_count: number;
+  calories_burned: number;
+  distance_meters: number;
+  heart_rate_avg: number;
+  active_minutes: number;
+  sleep_duration_hours: number;
+  weight_kg?: number;
+  height_cm?: number;
 }
 
 interface AdvancedGoogleFitChartsProps {
-  data: GoogleFitAdvancedData;
+  data: GoogleFitData[];
   cardVariants: any;
+  period: 'day' | 'week' | 'month';
+  comparisonData: GoogleFitData[];
+  userGoals: {
+    stepsGoal: number;
+    sleepGoal: number;
+    activeMinutesGoal: number;
+    caloriesGoal: number;
+  };
 }
 
 export const AdvancedGoogleFitCharts: React.FC<AdvancedGoogleFitChartsProps> = ({ 
   data, 
-  cardVariants 
+  cardVariants, 
+  period,
+  comparisonData,
+  userGoals 
 }) => {
-  const { dailyData, weeklyStats, healthMetrics } = data;
+  // Formatar dados para os gráficos avançados baseado no período
+  const formatAdvancedData = () => {
+    if (!data || data.length === 0) return [];
 
-  // Cores consistentes
-  const colors = {
-    primary: '#3B82F6',
-    success: '#10B981',
-    warning: '#F59E0B',
-    danger: '#EF4444',
-    purple: '#8B5CF6',
-    teal: '#14B8A6',
-    pink: '#EC4899',
-    orange: '#F97316'
-  };
-
-  // Dados para gráfico de pizza - distribuição de atividades
-  const activityDistribution = [
-    { name: 'Caminhada', value: weeklyStats.totalSteps * 0.6, color: colors.primary },
-    { name: 'Exercícios', value: weeklyStats.totalActiveMinutes * 2, color: colors.success },
-    { name: 'Descanso', value: weeklyStats.avgSleepDuration * 60, color: colors.purple },
-    { name: 'Outros', value: (weeklyStats.totalSteps * 0.4), color: colors.teal }
-  ];
-
-  // Dados para gráfico radial - metas semanais
-  const weeklyGoals = [
-    { 
-      name: 'Passos',
-      value: Math.min((weeklyStats.totalSteps / 70000) * 100, 100),
-      color: colors.primary,
-      target: '70.000 passos/semana'
-    },
-    { 
-      name: 'Calorias',
-      value: Math.min((weeklyStats.totalCalories / 3500) * 100, 100),
-      color: colors.orange,
-      target: '3.500 cal/semana'
-    },
-    { 
-      name: 'Minutos Ativos',
-      value: Math.min((weeklyStats.totalActiveMinutes / 150) * 100, 100),
-      color: colors.success,
-      target: '150 min/semana'
-    },
-    { 
-      name: 'Sono',
-      value: Math.min((weeklyStats.avgSleepDuration / 8) * 100, 100),
-      color: colors.purple,
-      target: '8h por noite'
+    switch (period) {
+      case 'day':
+        // Para dia, mostrar dados por hora (se disponível) ou apenas o valor total
+        return [{
+          name: 'Hoje',
+          steps: data[0]?.steps_count || 0,
+          calories: data[0]?.calories_burned || 0,
+          heartRate: data[0]?.heart_rate_avg || 0,
+          activeMinutes: data[0]?.active_minutes || 0,
+          sleep: data[0]?.sleep_duration_hours || 0,
+          distance: data[0]?.distance_meters || 0
+        }];
+      
+      case 'week':
+        // Para semana, mostrar dados por dia
+        return data.map(item => ({
+          name: new Date(item.data_date).toLocaleDateString('pt-BR', { weekday: 'short' }),
+          steps: item.steps_count || 0,
+          calories: item.calories_burned || 0,
+          heartRate: item.heart_rate_avg || 0,
+          activeMinutes: item.active_minutes || 0,
+          sleep: item.sleep_duration_hours || 0,
+          distance: item.distance_meters || 0,
+          date: item.data_date
+        }));
+      
+      case 'month':
+        // Para mês, agrupar por semana
+        const weeklyData = [];
+        for (let i = 0; i < data.length; i += 7) {
+          const weekData = data.slice(i, i + 7);
+          const weekStats = weekData.reduce((acc, item) => ({
+            steps: acc.steps + (item.steps_count || 0),
+            calories: acc.calories + (item.calories_burned || 0),
+            heartRate: acc.heartRate + (item.heart_rate_avg || 0),
+            activeMinutes: acc.activeMinutes + (item.active_minutes || 0),
+            sleep: acc.sleep + (item.sleep_duration_hours || 0),
+            distance: acc.distance + (item.distance_meters || 0)
+          }), { steps: 0, calories: 0, heartRate: 0, activeMinutes: 0, sleep: 0, distance: 0 });
+          
+          weeklyData.push({
+            name: `Semana ${Math.floor(i / 7) + 1}`,
+            ...weekStats,
+            heartRate: Math.round(weekStats.heartRate / weekData.length),
+            sleep: Math.round((weekStats.sleep / weekData.length) * 100) / 100
+          });
+        }
+        return weeklyData;
+      
+      default:
+        return data;
     }
+  };
+
+  const formattedData = formatAdvancedData();
+
+  // Calcular estatísticas de comparação
+  const getComparisonStats = () => {
+    if (!comparisonData || comparisonData.length === 0) return null;
+
+    const stats = comparisonData.reduce((acc, item) => ({
+      steps: acc.steps + (item.steps_count || 0),
+      calories: acc.calories + (item.calories_burned || 0),
+      heartRate: acc.heartRate + (item.heart_rate_avg || 0),
+      activeMinutes: acc.activeMinutes + (item.active_minutes || 0),
+      sleep: acc.sleep + (item.sleep_duration_hours || 0),
+      distance: acc.distance + (item.distance_meters || 0)
+    }), { steps: 0, calories: 0, heartRate: 0, activeMinutes: 0, sleep: 0, distance: 0 });
+
+    const count = comparisonData.length;
+    return {
+      steps: Math.round(stats.steps / count),
+      calories: Math.round(stats.calories / count),
+      heartRate: Math.round(stats.heartRate / count),
+      activeMinutes: Math.round(stats.activeMinutes / count),
+      sleep: Math.round((stats.sleep / count) * 100) / 100,
+      distance: Math.round(stats.distance / count)
+    };
+  };
+
+  const comparisonStats = getComparisonStats();
+
+  // Calcular variação percentual
+  const getVariation = (current: number, previous: number) => {
+    if (previous === 0) return current > 0 ? 100 : 0;
+    return Math.round(((current - previous) / previous) * 100);
+  };
+
+  // Obter label de comparação baseado no período
+  const getComparisonLabel = () => {
+    switch (period) {
+      case 'day': return 'ontem';
+      case 'week': return 'semana passada';
+      case 'month': return 'mês passado';
+      default: return 'período anterior';
+    }
+  };
+
+  // Calcular consistência (quantos dias atingiu a meta)
+  const calculateConsistency = (metric: 'steps' | 'calories' | 'activeMinutes' | 'sleep') => {
+    if (!data || data.length === 0) return 0;
+    
+    let targetValue: number;
+    let actualValues: number[];
+    
+    switch (metric) {
+      case 'steps':
+        targetValue = userGoals.stepsGoal;
+        actualValues = data.map(item => item.steps_count || 0);
+        break;
+      case 'calories':
+        targetValue = userGoals.caloriesGoal;
+        actualValues = data.map(item => item.calories_burned || 0);
+        break;
+      case 'activeMinutes':
+        targetValue = userGoals.activeMinutesGoal;
+        actualValues = data.map(item => item.active_minutes || 0);
+        break;
+      case 'sleep':
+        targetValue = userGoals.sleepGoal;
+        actualValues = data.map(item => item.sleep_duration_hours || 0);
+        break;
+      default:
+        return 0;
+    }
+    
+    const daysAchieved = actualValues.filter(value => value >= targetValue).length;
+    return Math.round((daysAchieved / data.length) * 100);
+  };
+
+  // Dados para o gráfico de pizza de consistência
+  const consistencyData = [
+    { name: 'Passos', value: calculateConsistency('steps'), color: '#3b82f6' },
+    { name: 'Calorias', value: calculateConsistency('calories'), color: '#f97316' },
+    { name: 'Minutos Ativos', value: calculateConsistency('activeMinutes'), color: '#22c55e' },
+    { name: 'Sono', value: calculateConsistency('sleep'), color: '#6366f1' }
   ];
 
-  // Classificação de saúde baseada nos dados
-  const getHealthScore = () => {
-    let score = 0;
-    if (weeklyStats.totalSteps >= 70000) score += 25;
-    else if (weeklyStats.totalSteps >= 50000) score += 18;
-    else if (weeklyStats.totalSteps >= 35000) score += 12;
-    
-    if (weeklyStats.avgHeartRate >= 60 && weeklyStats.avgHeartRate <= 100) score += 25;
-    else if (weeklyStats.avgHeartRate > 0) score += 15;
-    
-    if (weeklyStats.avgSleepDuration >= 7 && weeklyStats.avgSleepDuration <= 9) score += 25;
-    else if (weeklyStats.avgSleepDuration >= 6) score += 15;
-    
-    if (weeklyStats.totalActiveMinutes >= 150) score += 25;
-    else if (weeklyStats.totalActiveMinutes >= 100) score += 18;
-    else if (weeklyStats.totalActiveMinutes >= 50) score += 10;
-    
-    return Math.min(score, 100);
-  };
-
-  const healthScore = getHealthScore();
-
-  const getScoreColor = (score: number) => {
-    if (score >= 80) return colors.success;
-    if (score >= 60) return colors.warning;
-    if (score >= 40) return colors.orange;
-    return colors.danger;
-  };
-
-  const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString('pt-BR', { 
-      day: '2-digit', 
-      month: '2-digit' 
-    });
-  };
-
-  return (
-    <div className="space-y-6">
-      {/* Score de Saúde Geral */}
+  if (!data || data.length === 0) {
+    return (
       <motion.div variants={cardVariants}>
-        <Card className="bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 border-2 border-blue-200 dark:border-blue-800">
-          <CardHeader className="text-center">
-            <CardTitle className="flex items-center justify-center gap-2 text-xl">
-              <Target className="w-6 h-6 text-blue-600" />
-              Score de Saúde Google Fit
-            </CardTitle>
+        <Card>
+          <CardHeader>
+            <CardTitle>Análise Avançada</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-center space-y-4">
-              <div 
-                className="text-6xl font-bold"
-                style={{ color: getScoreColor(healthScore) }}
-              >
-                {healthScore}
-              </div>
-              <div className="text-lg text-muted-foreground">
-                {healthScore >= 80 ? 'Excelente' : 
-                 healthScore >= 60 ? 'Bom' : 
-                 healthScore >= 40 ? 'Regular' : 'Precisa Melhorar'}
-              </div>
-              <div className="w-full bg-gray-200 rounded-full h-3">
-                <div 
-                  className="h-3 rounded-full transition-all duration-1000"
-                  style={{ 
-                    width: `${healthScore}%`,
-                    backgroundColor: getScoreColor(healthScore)
-                  }}
-                />
-              </div>
-              <p className="text-sm text-muted-foreground">
-                Baseado em passos, frequência cardíaca, sono e atividade física
-              </p>
-            </div>
+            <p className="text-muted-foreground text-center py-8">
+              Nenhum dado disponível para análise avançada.
+            </p>
           </CardContent>
         </Card>
       </motion.div>
+    );
+  }
 
-      {/* Gráficos Principais */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        
-        {/* Evolução Diária - Passos e Calorias */}
-        <motion.div variants={cardVariants}>
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <TrendingUp className="w-5 h-5" />
-                Evolução Diária - Atividade
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <ResponsiveContainer width="100%" height={300}>
-                <LineChart data={dailyData}>
-                  <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
-                  <XAxis 
-                    dataKey="date" 
-                    tickFormatter={formatDate}
-                    tick={{ fontSize: 12 }}
-                  />
-                  <YAxis yAxisId="left" tick={{ fontSize: 12 }} />
-                  <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 12 }} />
-                  <Tooltip 
-                    formatter={(value: any, name: string) => [
-                      typeof value === 'number' ? value.toLocaleString() : value,
-                      name === 'steps' ? 'Passos' : 'Calorias'
-                    ]}
-                    labelFormatter={(date) => `Data: ${formatDate(date)}`}
-                  />
-                  <Line 
-                    yAxisId="left"
-                    type="monotone" 
-                    dataKey="steps" 
-                    stroke={colors.primary}
-                    strokeWidth={3}
-                    dot={{ fill: colors.primary, strokeWidth: 2, r: 4 }}
-                    name="Passos"
-                  />
-                  <Line 
-                    yAxisId="right"
-                    type="monotone" 
-                    dataKey="calories" 
-                    stroke={colors.orange}
-                    strokeWidth={3}
-                    dot={{ fill: colors.orange, strokeWidth: 2, r: 4 }}
-                    name="Calorias"
-                  />
-                </LineChart>
-              </ResponsiveContainer>
-            </CardContent>
-          </Card>
-        </motion.div>
-
-        {/* Frequência Cardíaca e Sono */}
-        <motion.div variants={cardVariants}>
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Heart className="w-5 h-5 text-red-500" />
-                Saúde Cardiovascular e Sono
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <ResponsiveContainer width="100%" height={300}>
-                <AreaChart data={dailyData}>
-                  <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
-                  <XAxis 
-                    dataKey="date" 
-                    tickFormatter={formatDate}
-                    tick={{ fontSize: 12 }}
-                  />
-                  <YAxis yAxisId="left" tick={{ fontSize: 12 }} />
-                  <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 12 }} />
-                  <Tooltip 
-                    formatter={(value: any, name: string) => [
-                      typeof value === 'number' ? value.toFixed(1) : value,
-                      name === 'heartRate' ? 'BPM' : 'Horas de Sono'
-                    ]}
-                    labelFormatter={(date) => `Data: ${formatDate(date)}`}
-                  />
-                  <Area 
-                    yAxisId="left"
-                    type="monotone" 
-                    dataKey="heartRate" 
-                    stroke={colors.danger}
-                    fill={colors.danger}
-                    fillOpacity={0.3}
-                    name="Freq. Cardíaca"
-                  />
-                  <Area 
-                    yAxisId="right"
-                    type="monotone" 
-                    dataKey="sleepHours" 
-                    stroke={colors.purple}
-                    fill={colors.purple}
-                    fillOpacity={0.3}
-                    name="Sono"
-                  />
-                </AreaChart>
-              </ResponsiveContainer>
-            </CardContent>
-          </Card>
-        </motion.div>
-
-        {/* Metas Semanais - Gráfico Radial */}
-        <motion.div variants={cardVariants}>
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Target className="w-5 h-5" />
-                Progresso das Metas Semanais
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <ResponsiveContainer width="100%" height={300}>
-                <RadialBarChart 
-                  cx="50%" 
-                  cy="50%" 
-                  innerRadius="20%" 
-                  outerRadius="90%" 
-                  data={weeklyGoals}
-                >
-                  <RadialBar 
-                    dataKey="value" 
-                    cornerRadius={10} 
-                    fill="#8884d8"
-                  />
-                  <Tooltip 
-                    formatter={(value: any, name: string, props: any) => [
-                      `${value.toFixed(1)}%`,
-                      props.payload.target
-                    ]}
-                  />
-                </RadialBarChart>
-              </ResponsiveContainer>
-              <div className="grid grid-cols-2 gap-4 mt-4">
-                {weeklyGoals.map((goal, index) => (
-                  <div key={index} className="flex items-center gap-2">
-                    <div 
-                      className="w-3 h-3 rounded-full"
-                      style={{ backgroundColor: goal.color }}
-                    />
-                    <div className="text-sm">
-                      <div className="font-medium">{goal.name}</div>
-                      <div className="text-muted-foreground text-xs">
-                        {goal.value.toFixed(0)}% da meta
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-        </motion.div>
-
-        {/* Distribuição de Atividades */}
-        <motion.div variants={cardVariants}>
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Activity className="w-5 h-5" />
-                Distribuição Semanal de Atividades
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <ResponsiveContainer width="100%" height={300}>
+  return (
+    <>
+      {/* Gráfico de Consistência (Pizza) */}
+      <motion.div variants={cardVariants}>
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Target className="w-5 h-5 text-purple-600" />
+              Consistência de Metas - {period === 'day' ? 'Hoje' : period === 'week' ? 'Esta Semana' : 'Este Mês'}
+            </CardTitle>
+            <p className="text-sm text-muted-foreground">
+              Percentual de dias que atingiu cada meta
+            </p>
+          </CardHeader>
+          <CardContent>
+            <div className="flex items-center justify-center">
+              <ResponsiveContainer width={300} height={300}>
                 <PieChart>
                   <Pie
-                    data={activityDistribution}
-                    cx="50%"
-                    cy="50%"
+                    data={consistencyData}
+                    cx={150}
+                    cy={150}
                     innerRadius={60}
                     outerRadius={120}
                     paddingAngle={5}
                     dataKey="value"
                   >
-                    {activityDistribution.map((entry, index) => (
+                    {consistencyData.map((entry, index) => (
                       <Cell key={`cell-${index}`} fill={entry.color} />
                     ))}
                   </Pie>
-                  <Tooltip 
-                    formatter={(value: any) => [value.toLocaleString(), 'Pontos']}
-                  />
+                  <Tooltip formatter={(value: number) => [`${value}%`, 'Consistência']} />
                 </PieChart>
               </ResponsiveContainer>
-              <div className="grid grid-cols-2 gap-2 mt-4">
-                {activityDistribution.map((item, index) => (
-                  <div key={index} className="flex items-center gap-2">
-                    <div 
-                      className="w-3 h-3 rounded-full"
-                      style={{ backgroundColor: item.color }}
-                    />
-                    <span className="text-sm">{item.name}</span>
+            </div>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-4">
+              {consistencyData.map((item, index) => (
+                <div key={index} className="text-center">
+                  <div className="text-lg font-bold" style={{ color: item.color }}>
+                    {item.value}%
                   </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-        </motion.div>
-      </div>
+                  <div className="text-sm text-muted-foreground">{item.name}</div>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      </motion.div>
 
-      {/* Métricas de Saúde Avançadas */}
-      {healthMetrics && (
-        <motion.div variants={cardVariants}>
-          <Card className="bg-gradient-to-r from-purple-50 to-pink-50 dark:from-purple-900/20 dark:to-pink-900/20">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Scale className="w-5 h-5" />
-                Métricas de Saúde Avançadas
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                {healthMetrics.restingHeartRate && (
-                  <div className="text-center space-y-2">
-                    <Heart className="w-8 h-8 text-blue-500 mx-auto" />
-                    <div className="text-2xl font-bold text-blue-600">
-                      {healthMetrics.restingHeartRate}
-                    </div>
-                    <div className="text-sm text-muted-foreground">FC Repouso</div>
-                    <Badge variant={
-                      healthMetrics.restingHeartRate <= 60 ? 'default' :
-                      healthMetrics.restingHeartRate <= 80 ? 'secondary' : 'destructive'
-                    }>
-                      {healthMetrics.restingHeartRate <= 60 ? 'Atlético' :
-                       healthMetrics.restingHeartRate <= 80 ? 'Normal' : 'Alto'}
-                    </Badge>
-                  </div>
-                )}
-                
-                {healthMetrics.maxHeartRate && (
-                  <div className="text-center space-y-2">
-                    <Zap className="w-8 h-8 text-red-500 mx-auto" />
-                    <div className="text-2xl font-bold text-red-600">
-                      {healthMetrics.maxHeartRate}
-                    </div>
-                    <div className="text-sm text-muted-foreground">FC Máxima</div>
-                    <Badge variant="outline">BPM</Badge>
-                  </div>
-                )}
-                
-                {healthMetrics.bmi && (
-                  <div className="text-center space-y-2">
-                    <Scale className="w-8 h-8 text-green-500 mx-auto" />
-                    <div className="text-2xl font-bold text-green-600">
-                      {healthMetrics.bmi.toFixed(1)}
-                    </div>
-                    <div className="text-sm text-muted-foreground">IMC</div>
-                    <Badge variant={
-                      healthMetrics.bmi < 18.5 ? 'destructive' :
-                      healthMetrics.bmi <= 24.9 ? 'default' :
-                      healthMetrics.bmi <= 29.9 ? 'secondary' : 'destructive'
-                    }>
-                      {healthMetrics.bmi < 18.5 ? 'Abaixo' :
-                       healthMetrics.bmi <= 24.9 ? 'Normal' :
-                       healthMetrics.bmi <= 29.9 ? 'Sobrepeso' : 'Obesidade'}
-                    </Badge>
-                  </div>
-                )}
-                
-                {weeklyStats.currentWeight && (
-                  <div className="text-center space-y-2">
-                    <Scale className="w-8 h-8 text-purple-500 mx-auto" />
-                    <div className="text-2xl font-bold text-purple-600">
-                      {weeklyStats.currentWeight.toFixed(1)}
-                    </div>
-                    <div className="text-sm text-muted-foreground">Peso Atual (kg)</div>
-                    {weeklyStats.weightTrend && (
-                      <Badge variant={
-                        weeklyStats.weightTrend < 0 ? 'default' : 
-                        weeklyStats.weightTrend === 0 ? 'secondary' : 'destructive'
-                      }>
-                        {weeklyStats.weightTrend < 0 ? '↓' : 
-                         weeklyStats.weightTrend === 0 ? '→' : '↑'} 
-                        {Math.abs(weeklyStats.weightTrend).toFixed(1)}kg
-                      </Badge>
-                    )}
+      {/* Gráfico de Evolução Temporal */}
+      <motion.div variants={cardVariants}>
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <TrendingUp className="w-5 h-5 text-green-600" />
+              Evolução Temporal - {period === 'day' ? 'Hoje' : period === 'week' ? 'Esta Semana' : 'Este Mês'}
+            </CardTitle>
+            {comparisonStats && (
+              <p className="text-sm text-muted-foreground">
+                Comparação com {getComparisonLabel()}
+              </p>
+            )}
+          </CardHeader>
+          <CardContent>
+            <ResponsiveContainer width="100%" height={400}>
+              <LineChart data={formattedData}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="name" />
+                <YAxis yAxisId="left" />
+                <YAxis yAxisId="right" orientation="right" />
+                <Tooltip />
+                <Line yAxisId="left" type="monotone" dataKey="steps" stroke="#3b82f6" name="Passos" strokeWidth={2} />
+                <Line yAxisId="left" type="monotone" dataKey="calories" stroke="#f97316" name="Calorias" strokeWidth={2} />
+                <Line yAxisId="right" type="monotone" dataKey="heartRate" stroke="#dc2626" name="Freq. Cardíaca" strokeWidth={2} />
+                <ReferenceLine yAxisId="left" y={userGoals.stepsGoal} stroke="#ef4444" strokeDasharray="3 3" label="Meta Passos" />
+                <ReferenceLine yAxisId="left" y={userGoals.caloriesGoal} stroke="#f59e0b" strokeDasharray="3 3" label="Meta Calorias" />
+              </LineChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
+      </motion.div>
+
+      {/* Gráfico de Atividade por Período */}
+      <motion.div variants={cardVariants}>
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Activity className="w-5 h-5 text-blue-600" />
+              Atividade por Período - {period === 'day' ? 'Hoje' : period === 'week' ? 'Esta Semana' : 'Este Mês'}
+            </CardTitle>
+            {comparisonStats && (
+              <p className="text-sm text-muted-foreground">
+                Minutos ativos vs {getComparisonLabel()}
+              </p>
+            )}
+          </CardHeader>
+          <CardContent>
+            <ResponsiveContainer width="100%" height={300}>
+              <AreaChart data={formattedData}>
+                <defs>
+                  <linearGradient id="activityGradient" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#22c55e" stopOpacity={0.8}/>
+                    <stop offset="95%" stopColor="#22c55e" stopOpacity={0.1}/>
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="name" />
+                <YAxis />
+                <Tooltip />
+                <Area type="monotone" dataKey="activeMinutes" stroke="#22c55e" fill="url(#activityGradient)" />
+                <ReferenceLine y={userGoals.activeMinutesGoal} stroke="#ef4444" strokeDasharray="3 3" label="Meta" />
+              </AreaChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
+      </motion.div>
+
+      {/* Gráfico de Qualidade do Sono */}
+      <motion.div variants={cardVariants}>
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Moon className="w-5 h-5 text-indigo-600" />
+              Qualidade do Sono - {period === 'day' ? 'Hoje' : period === 'week' ? 'Esta Semana' : 'Este Mês'}
+            </CardTitle>
+            {comparisonStats && (
+              <p className="text-sm text-muted-foreground">
+                Duração vs {getComparisonLabel()}
+              </p>
+            )}
+          </CardHeader>
+          <CardContent>
+            <ResponsiveContainer width="100%" height={300}>
+              <BarChart data={formattedData}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="name" />
+                <YAxis />
+                <Tooltip formatter={(value: number) => [`${value}h`, 'Sono']} />
+                <Bar dataKey="sleep" fill="#6366f1" />
+                <ReferenceLine y={userGoals.sleepGoal} stroke="#ef4444" strokeDasharray="3 3" label="Meta" />
+              </BarChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
+      </motion.div>
+
+      {/* Resumo de Performance */}
+      <motion.div variants={cardVariants}>
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Calendar className="w-5 h-5 text-amber-600" />
+              Resumo de Performance - {period === 'day' ? 'Hoje' : period === 'week' ? 'Esta Semana' : 'Este Mês'}
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div className="text-center p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
+                <div className="text-2xl font-bold text-blue-600">
+                  {data.reduce((sum, item) => sum + (item.steps_count || 0), 0).toLocaleString()}
+                </div>
+                <div className="text-sm text-muted-foreground">Total Passos</div>
+                {comparisonStats && (
+                  <div className="text-xs text-muted-foreground mt-1">
+                    {getVariation(
+                      data.reduce((sum, item) => sum + (item.steps_count || 0), 0),
+                      comparisonStats.steps * data.length
+                    )}% vs {getComparisonLabel()}
                   </div>
                 )}
               </div>
-            </CardContent>
-          </Card>
-        </motion.div>
-      )}
-    </div>
+              
+              <div className="text-center p-4 bg-orange-50 dark:bg-orange-900/20 rounded-lg">
+                <div className="text-2xl font-bold text-orange-600">
+                  {data.reduce((sum, item) => sum + (item.calories_burned || 0), 0).toLocaleString()}
+                </div>
+                <div className="text-sm text-muted-foreground">Total Calorias</div>
+                {comparisonStats && (
+                  <div className="text-xs text-muted-foreground mt-1">
+                    {getVariation(
+                      data.reduce((sum, item) => sum + (item.calories_burned || 0), 0),
+                      comparisonStats.calories * data.length
+                    )}% vs {getComparisonLabel()}
+                  </div>
+                )}
+              </div>
+              
+              <div className="text-center p-4 bg-green-50 dark:bg-green-900/20 rounded-lg">
+                <div className="text-2xl font-bold text-green-600">
+                  {data.reduce((sum, item) => sum + (item.active_minutes || 0), 0)}
+                </div>
+                <div className="text-sm text-muted-foreground">Total Min. Ativos</div>
+                {comparisonStats && (
+                  <div className="text-xs text-muted-foreground mt-1">
+                    {getVariation(
+                      data.reduce((sum, item) => sum + (item.active_minutes || 0), 0),
+                      comparisonStats.activeMinutes * data.length
+                    )}% vs {getComparisonLabel()}
+                  </div>
+                )}
+              </div>
+              
+              <div className="text-center p-4 bg-indigo-50 dark:bg-indigo-900/20 rounded-lg">
+                <div className="text-2xl font-bold text-indigo-600">
+                  {(data.reduce((sum, item) => sum + (item.sleep_duration_hours || 0), 0) / data.length).toFixed(1)}h
+                </div>
+                <div className="text-sm text-muted-foreground">Média Sono</div>
+                {comparisonStats && (
+                  <div className="text-xs text-muted-foreground mt-1">
+                    {getVariation(
+                      data.reduce((sum, item) => sum + (item.sleep_duration_hours || 0), 0) / data.length,
+                      comparisonStats.sleep
+                    )}% vs {getComparisonLabel()}
+                  </div>
+                )}
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </motion.div>
+    </>
   );
 };
 

@@ -220,7 +220,7 @@ export function UserProfileSidebar({ user, onUpdateProfile }: UserProfileSidebar
             Editar Perfil
           </Button>
         </DialogTrigger>
-        <DialogContent className="w-[95vw] max-w-md lg:max-w-lg max-h-[90vh] lg:max-h-[80vh] overflow-y-auto mx-4 lg:mx-0">
+           <DialogContent className="w-[95vw] max-w-md lg:max-w-lg max-h-[90vh] lg:max-h-[80vh] overflow-y-auto mx-4 lg:mx-0">
           <DialogHeader>
             <DialogTitle>Editar Perfil</DialogTitle>
           </DialogHeader>

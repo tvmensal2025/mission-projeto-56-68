@@ -46,8 +46,13 @@ function decideDailyCalories(intake: Intake): number {
 
 function baseTemplate(intake: Intake): Array<PlannerItem> {
   // Safe seed-based template (uses foods present in seed migration)
-  // breakfast kept empty for now due to limited seed; focus on lunch/dinner
+  // inclui café da manhã e lanche com itens simples
   return [
+    { slot: 'breakfast', item_name: 'aveia', grams: 40 },
+    { slot: 'breakfast', item_name: 'banana', grams: 120 },
+    { slot: 'breakfast', item_name: 'leite', grams: 200 },
+    { slot: 'snack', item_name: 'iogurte', grams: 170 },
+    { slot: 'snack', item_name: 'maçã', grams: 130 },
     { slot: 'lunch', item_name: 'arroz', grams: 120 },
     { slot: 'lunch', item_name: 'frango', grams: 150, state: 'grelhado' },
     { slot: 'lunch', item_name: 'molho de tomate', grams: 40 },
@@ -125,17 +130,28 @@ serve(async (req) => {
 
     const slotResults: Record<string, { totals: Totals; resolved: any[] }> = {};
     let dayTotals: Totals = { kcal: 0, protein_g: 0, fat_g: 0, carbs_g: 0, fiber_g: 0, sodium_mg: 0 };
+  const weightMap: Record<MealSlot, number> = { breakfast: 0.25, lunch: 0.35, snack: 0.1, dinner: 0.3, supper: 0 };
 
     for (const [slot, list] of slotEntries) {
       const invokeBody = {
         items: list.map((l) => ({ name: l.item_name, grams: l.grams, state: l.state })),
         locale: 'pt-BR'
       };
-      const { data, error } = await service.functions.invoke('nutrition-calc', { body: invokeBody });
+      const timeout = new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 3500));
+      let data: any | null = null; let error: any | null = null;
+      try {
+        const res: any = await Promise.race([
+          service.functions.invoke('nutrition-calc', { body: invokeBody }),
+          timeout
+        ]);
+        data = res?.data; error = res?.error || null;
+      } catch (e) {
+        error = e;
+      }
       let slotTotals: Totals;
       if (error || !data) {
         console.warn('nutrition-planner: fallback simple calc due to error or empty data from nutrition-calc');
-        // Fallback simples: estimar macros por regras básicas
+        // Fallback simples: estimar macros por regras básicas (agora com mais itens comuns)
         const resolved = list.map((l) => ({
           input: { name: l.item_name, grams: l.grams, state: l.state },
           matched_food_id: null,
@@ -146,6 +162,15 @@ serve(async (req) => {
             const name = (l.item_name || '').toLowerCase();
             if (name.includes('arroz')) return { kcal: g * 1.3, protein_g: g * 0.027, fat_g: g * 0.003, carbs_g: g * 0.28, fiber_g: g * 0.004, sodium_mg: g * 0.01 };
             if (name.includes('frango')) return { kcal: g * 1.1, protein_g: g * 0.206, fat_g: g * 0.036, carbs_g: 0, fiber_g: 0, sodium_mg: 74/100 * g };
+            if (name.includes('peixe')) return { kcal: g * 1.0, protein_g: g * 0.22, fat_g: g * 0.02, carbs_g: 0, fiber_g: 0, sodium_mg: 0.6 * g };
+            if (name.includes('atum')) return { kcal: g * 1.32, protein_g: g * 0.29, fat_g: g * 0.01, carbs_g: 0, fiber_g: 0, sodium_mg: 0.37 * g };
+            if (name.includes('ovo')) return { kcal: g * 1.56, protein_g: g * 0.126, fat_g: g * 0.106, carbs_g: g * 0.012, fiber_g: 0, sodium_mg: 1.24 * g };
+            if (name.includes('aveia')) return { kcal: g * 3.89, protein_g: g * 0.17, fat_g: g * 0.07, carbs_g: g * 0.66, fiber_g: g * 0.11, sodium_mg: 0.02 * g };
+            if (name.includes('pão') || name.includes('pao')) return { kcal: g * 2.6, protein_g: g * 0.08, fat_g: g * 0.03, carbs_g: g * 0.49, fiber_g: g * 0.025, sodium_mg: 5 * g };
+            if (name.includes('banana')) return { kcal: g * 0.89, protein_g: g * 0.011, fat_g: g * 0.003, carbs_g: g * 0.23, fiber_g: g * 0.026, sodium_mg: 0.001 * g };
+            if (name.includes('maç') || name.includes('maca')) return { kcal: g * 0.52, protein_g: g * 0.003, fat_g: g * 0.002, carbs_g: g * 0.14, fiber_g: g * 0.024, sodium_mg: 0.001 * g };
+            if (name.includes('iogurte')) return { kcal: g * 0.63, protein_g: g * 0.035, fat_g: g * 0.033, carbs_g: g * 0.049, fiber_g: 0, sodium_mg: 0.5 * g };
+            if (name.includes('leite')) return { kcal: g * 0.64, protein_g: g * 0.033, fat_g: g * 0.036, carbs_g: g * 0.05, fiber_g: 0, sodium_mg: 0.44 * g };
             if (name.includes('azeite')) return { kcal: g * 8.84, protein_g: 0, fat_g: g * 1.0, carbs_g: 0, fiber_g: 0, sodium_mg: 0 };
             if (name.includes('molho')) return { kcal: g * 0.29, protein_g: g * 0.015, fat_g: g * 0.002, carbs_g: g * 0.05, fiber_g: g * 0.015, sodium_mg: 400/100 * g };
             return { kcal: 0, protein_g: 0, fat_g: 0, carbs_g: 0, fiber_g: 0, sodium_mg: 0 };
@@ -159,10 +184,62 @@ serve(async (req) => {
           fiber_g: acc.fiber_g + (r.nutrients.fiber_g || 0),
           sodium_mg: acc.sodium_mg + (r.nutrients.sodium_mg || 0),
         }), { kcal: 0, protein_g: 0, fat_g: 0, carbs_g: 0, fiber_g: 0, sodium_mg: 0 } as Totals);
-        slotResults[slot] = { totals: slotTotals, resolved };
+        // Ajuste para target por refeição
+        const desired = decideDailyCalories(payload.intake) * (weightMap[slot] || 0);
+        let scaledResolved = resolved;
+        let scaledTotals = slotTotals;
+        if (desired > 0 && slotTotals.kcal > 0) {
+          const scale = Math.max(0.7, Math.min(1.3, desired / slotTotals.kcal));
+          scaledResolved = resolved.map((r) => ({
+            ...r,
+            effective_grams: Math.round((r.effective_grams || 0) * scale / 5) * 5,
+            nutrients: {
+              kcal: (r.nutrients.kcal || 0) * scale,
+              protein_g: (r.nutrients.protein_g || 0) * scale,
+              fat_g: (r.nutrients.fat_g || 0) * scale,
+              carbs_g: (r.nutrients.carbs_g || 0) * scale,
+              fiber_g: (r.nutrients.fiber_g || 0) * scale,
+              sodium_mg: (r.nutrients.sodium_mg || 0) * scale,
+            },
+          }));
+          scaledTotals = {
+            kcal: slotTotals.kcal * scale,
+            protein_g: slotTotals.protein_g * scale,
+            fat_g: slotTotals.fat_g * scale,
+            carbs_g: slotTotals.carbs_g * scale,
+            fiber_g: slotTotals.fiber_g * scale,
+            sodium_mg: slotTotals.sodium_mg * scale,
+          };
+        }
+        slotResults[slot] = { totals: scaledTotals, resolved: scaledResolved };
       } else {
         slotTotals = data?.totals || { kcal: 0, protein_g: 0, fat_g: 0, carbs_g: 0, fiber_g: 0, sodium_mg: 0 };
-        slotResults[slot] = { totals: slotTotals, resolved: data?.resolved || [] };
+        let resolved = data?.resolved || [];
+        const desired = decideDailyCalories(payload.intake) * (weightMap[slot] || 0);
+        if (desired > 0 && slotTotals.kcal > 0) {
+          const scale = Math.max(0.7, Math.min(1.3, desired / slotTotals.kcal));
+          resolved = resolved.map((r: any) => ({
+            ...r,
+            effective_grams: Math.round((r.effective_grams || 0) * scale / 5) * 5,
+            nutrients: r.nutrients ? {
+              kcal: (r.nutrients.kcal || 0) * scale,
+              protein_g: (r.nutrients.protein_g || 0) * scale,
+              fat_g: (r.nutrients.fat_g || 0) * scale,
+              carbs_g: (r.nutrients.carbs_g || 0) * scale,
+              fiber_g: (r.nutrients.fiber_g || 0) * scale,
+              sodium_mg: (r.nutrients.sodium_mg || 0) * scale,
+            } : r.nutrients,
+          }));
+          slotTotals = {
+            kcal: slotTotals.kcal * scale,
+            protein_g: slotTotals.protein_g * scale,
+            fat_g: slotTotals.fat_g * scale,
+            carbs_g: slotTotals.carbs_g * scale,
+            fiber_g: slotTotals.fiber_g * scale,
+            sodium_mg: slotTotals.sodium_mg * scale,
+          };
+        }
+        slotResults[slot] = { totals: slotTotals, resolved };
       }
       dayTotals.kcal += slotTotals.kcal;
       dayTotals.protein_g += slotTotals.protein_g;
@@ -173,7 +250,7 @@ serve(async (req) => {
     }
 
     const targetKcal = decideDailyCalories(payload.intake);
-    const guarantee = Math.abs(dayTotals.kcal - targetKcal) / targetKcal <= 0.2; // ±20% for prototype
+    const guarantee = targetKcal > 0 && Math.abs(dayTotals.kcal - targetKcal) / targetKcal <= 0.15; // ±15% mais rigoroso
 
     let savedPlanId: string | null = null;
     if (payload.save && payload.user_id) {
