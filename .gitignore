@@ -49,3 +49,16 @@ Thumbs.db
 ehthumbs.db
 Desktop.ini
 .vercel
+
+# Local storage for analysis results (not committed)
+static/csv/
+static/images/
+
+# Label Studio data (not committed)
+label-studio-data/
+.env-label-studio
+
+# Exclude local envs and large binaries
+yolo_service/.venv/
+yolo_service/*.pt
+
