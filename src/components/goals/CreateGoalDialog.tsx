@@ -227,7 +227,7 @@ export function CreateGoalDialog({ open, onOpenChange, onSuccess }: CreateGoalDi
           }
           return null as any;
         }).filter(Boolean);
-        const { error: invErr } = await supabase.from<any>('user_goal_invitations').insert(rows);
+        const { error: invErr } = await (supabase as any).from('user_goal_invitations').insert(rows);
         if (invErr) {
           console.error('Erro ao inserir convites:', invErr);
           throw new Error('Meta criada, mas falhou ao enviar convites. Tente novamente.');

@@ -1057,7 +1057,7 @@ const AdminPage = () => {
       case 'tests':
         return <SimulatedTests />;
       case 'sofia':
-        return <SofiaManagement />;
+        return <SystemStatus />;
       default:
         return <SystemStatus />;
     }

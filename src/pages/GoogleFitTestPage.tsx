@@ -58,7 +58,7 @@ export default function GoogleFitTestPage() {
       // 3. Teste Tabelas
       console.log('3️⃣ Testando tabelas...');
       try {
-        const { data: tokensData, error: tokensError } = await supabase
+        const { data: tokensData, error: tokensError } = await (supabase as any)
           .from('google_fit_tokens')
           .select('*')
           .limit(1);

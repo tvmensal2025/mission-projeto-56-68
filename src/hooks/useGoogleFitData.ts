@@ -65,7 +65,7 @@ export function useGoogleFitData() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error('Usuário não autenticado');
 
-      const { data: tokenRow } = await supabase
+      const { data: tokenRow }: any = await (supabase as any)
         .from('google_fit_tokens')
         .select('access_token, expires_at')
         .eq('user_id', user.id)
@@ -172,7 +172,7 @@ export function useGoogleFitData() {
       try {
         const { data: { user } } = await supabase.auth.getUser();
         if (!user) return false;
-        const { data: tokenData } = await supabase
+        const { data: tokenData }: any = await (supabase as any)
           .from('google_fit_tokens')
           .select('expires_at')
           .eq('user_id', user.id)
@@ -184,7 +184,7 @@ export function useGoogleFitData() {
     async syncData() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error('Usuário não autenticado');
-      const { data: tokenData } = await supabase
+      const { data: tokenData }: any = await (supabase as any)
         .from('google_fit_tokens')
         .select('access_token, refresh_token, expires_at')
         .eq('user_id', user.id)

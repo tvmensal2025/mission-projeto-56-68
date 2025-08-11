@@ -32,7 +32,7 @@ const GoogleFitOAuthPage = () => {
       try {
         const { data: { user } } = await supabase.auth.getUser();
         if (!user) { setAlreadyConnected(false); return; }
-        const { data: tokenRow } = await supabase
+        const { data: tokenRow }: any = await (supabase as any)
           .from('google_fit_tokens')
           .select('expires_at')
           .eq('user_id', user.id)

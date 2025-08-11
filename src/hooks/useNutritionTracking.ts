@@ -86,7 +86,7 @@ export const useNutritionTracking = () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error('Usuário não autenticado');
 
-      let query = supabase
+      let query = (supabase as any)
         .from('nutrition_tracking')
         .select('*')
         .eq('user_id', user.id)
@@ -136,7 +136,7 @@ export const useNutritionTracking = () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
-      const { data, error } = await supabase
+      const { data, error } = await (supabase as any)
         .from('nutrition_goals')
         .select('*')
         .eq('user_id', user.id)
@@ -183,7 +183,7 @@ export const useNutritionTracking = () => {
         total_fiber: meal.totalFiber
       };
 
-      const { data, error } = await supabase
+      const { data, error } = await (supabase as any)
         .from('nutrition_tracking')
         .insert([mealData])
         .select()
@@ -225,7 +225,7 @@ export const useNutritionTracking = () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error('Usuário não autenticado');
 
-      const { error } = await supabase
+      const { error } = await (supabase as any)
         .from('nutrition_goals')
         .upsert({
           user_id: user.id,
@@ -251,7 +251,7 @@ export const useNutritionTracking = () => {
     setError(null);
 
     try {
-      const { error } = await supabase
+      const { error } = await (supabase as any)
         .from('nutrition_tracking')
         .delete()
         .eq('id', mealId);

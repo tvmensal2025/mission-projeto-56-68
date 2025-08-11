@@ -59,12 +59,12 @@ O que você gostaria de conversar hoje? Pode me enviar uma foto da sua refeiçã
   async function loadPendingInvites() {
     try {
       if (!user) return;
-      const { data, error } = await supabase
-        .from<any>('user_goal_invitations')
-        .select('id, goal_id, invitee_name, invitee_email, status, created_at')
-        .eq('invitee_user_id', user.id)
-        .eq('status', 'pending')
-        .order('created_at', { ascending: false });
+        const { data, error } = await (supabase as any)
+          .from('user_goal_invitations')
+          .select('id, goal_id, invitee_name, invitee_email, status, created_at')
+          .eq('invitee_user_id', user.id)
+          .eq('status', 'pending')
+          .order('created_at', { ascending: false });
       if (!error) setPendingInvites(data || []);
     } catch (e) {
       console.error('Erro ao carregar convites:', e);
@@ -81,9 +81,9 @@ O que você gostaria de conversar hoje? Pode me enviar uma foto da sua refeiçã
     try {
       if (!user) return;
       // inserir participação
-      await supabase.from<any>('user_goal_participants').insert({ goal_id: goalId, user_id: user.id, can_view_progress: true });
+      await (supabase as any).from('user_goal_participants').insert({ goal_id: goalId, user_id: user.id, can_view_progress: true });
       // atualizar convite
-      await supabase.from<any>('user_goal_invitations').update({ status: 'approved' }).eq('id', inviteId);
+      await (supabase as any).from('user_goal_invitations').update({ status: 'approved' }).eq('id', inviteId);
       await loadPendingInvites();
       toast.success('Meta sincronizada! Vocês poderão ver o progresso um do outro.');
       setMessages(prev => [...prev, {
@@ -100,7 +100,7 @@ O que você gostaria de conversar hoje? Pode me enviar uma foto da sua refeiçã
 
   async function rejectInvite(inviteId: string) {
     try {
-      await supabase.from('user_goal_invitations').update({ status: 'rejected' }).eq('id', inviteId);
+      await (supabase as any).from('user_goal_invitations').update({ status: 'rejected' }).eq('id', inviteId);
       await loadPendingInvites();
       toast.info('Convite recusado.');
     } catch (e) {
