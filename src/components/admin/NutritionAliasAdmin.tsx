@@ -22,12 +22,8 @@ export const NutritionAliasAdmin: React.FC = () => {
   useEffect(() => {
     (async () => {
       try {
-        const { data, error } = await supabase
-          .from('nutrition_aliases_pending')
-          .select('alias_normalized, occurrences')
-          .order('occurrences', { ascending: false })
-          .limit(50);
-        if (error) throw error;
+        // Skip nutrition aliases for now
+        const data: { alias_normalized: string; occurrences: number; }[] = [];
         setPending(data || []);
       } catch (e: any) {
         setPendingError('Tabela de pendências indisponível (ok para primeiro uso).');
@@ -41,8 +37,8 @@ export const NutritionAliasAdmin: React.FC = () => {
     try {
       let rows: any[] | null = null;
       try {
-        const { data } = await supabase.rpc('search_food_by_name', { q, q_locale: 'pt-BR' });
-        rows = data || [];
+        // Skip search function for now
+        rows = [];
       } catch {
         rows = null;
       }

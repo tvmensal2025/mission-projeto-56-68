@@ -338,7 +338,7 @@ const MyProgress: React.FC = () => {
           avgHeartRate: currentStats.avgHeartRate,
           totalActiveMinutes: currentStats.totalActiveMinutes,
           avgSleepHours: currentStats.avgSleepHours,
-          workoutFrequency: 0,
+          
         }}
         isGoogleFitConnected={isConnected}
         getScoreGradient={(score: number) => score >= 80 ? 'from-green-400 to-green-600' : score >= 60 ? 'from-yellow-400 to-yellow-600' : score >= 40 ? 'from-orange-400 to-orange-600' : 'from-red-400 to-red-600'}

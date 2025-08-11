@@ -414,7 +414,10 @@ export function AIControlPanelUnified() {
         .order('uploaded_at', { ascending: false });
 
       if (error) throw error;
-      setDocuments(data || []);
+      setDocuments((data || []).map(doc => ({
+        ...doc,
+        type: (doc.type as 'medical' | 'policy' | 'guide' | 'faq') || 'guide'
+      })));
     } catch (error) {
       console.error('Erro ao carregar documentos:', error);
     }
@@ -1677,7 +1680,7 @@ export function AIControlPanelUnified() {
                                         value={config?.service || 'openai'}
                                         onValueChange={(value) => {
                                           if (config) {
-                                            saveConfiguration({ ...config, service: value as 'openai' | 'gemini' | 'ollama' | 'sofia' });
+                                            saveConfiguration({ ...config, service: value as 'openai' | 'gemini' | 'ollama' });
                                           }
                                         }}
                                       >

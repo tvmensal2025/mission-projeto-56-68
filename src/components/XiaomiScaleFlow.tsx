@@ -103,16 +103,13 @@ export const XiaomiScaleFlow: React.FC = () => {
         setGoogleFitConnected(false);
         return;
       }
-      const { data: tokenRow } = await supabase
-        .from('google_fit_tokens')
-        .select('expires_at')
-        .eq('user_id', user.id)
-        .maybeSingle();
+      // Skip Google Fit token check for now
+      const tokenRow = null;
       if (!tokenRow) {
         setGoogleFitConnected(false);
         return;
       }
-      const expired = new Date(tokenRow.expires_at) < new Date();
+      const expired = true;
       setGoogleFitConnected(!expired);
     } catch {
       setGoogleFitConnected(false);

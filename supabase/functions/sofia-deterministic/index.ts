@@ -49,10 +49,13 @@ serve(async (req) => {
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    const { detected_foods, user_id, analysis_type = 'nutritional_sum' } = await req.json();
+    const { detected_foods, user_id, analysis_type = 'nutritional_sum', request_id } = await req.json();
     
     console.log('🔥 Sofia Deterministic - Cálculo nutricional exato');
     console.log(`📊 Processando ${detected_foods?.length || 0} alimentos`);
+    if (request_id) {
+      console.log(`🆔 Request ID: ${request_id}`);
+    }
 
     if (!detected_foods || !Array.isArray(detected_foods)) {
       throw new Error('detected_foods deve ser um array');
@@ -212,20 +215,13 @@ async function calculateDeterministicNutrition(supabase: any, foods: DetectedFoo
   return result;
 }
 
-function generateSofiaResponse(userName: string, nutrition: NutritionCalculation, foods: DetectedFood[]): string {
-  const foodList = foods.map(f => `• ${f.name}`).join('\n');
-  
-  return `Oi ${userName}! 😊
+function generateSofiaResponse(userName: string, nutrition: NutritionCalculation, foods: DetectedFood[]): string {  
+  return `💪 Proteínas: ${nutrition.total_proteina} g
+🍞 Carboidratos: ${nutrition.total_carbo} g  
+🥑 Gorduras: ${nutrition.total_gordura} g
+🔥 Estimativa calórica: ${nutrition.total_kcal} kcal
 
-🍽️ **Alimentos detectados:**
-${foodList}
-
-💪 **Proteínas:** ${nutrition.total_proteina} g
-🍞 **Carboidratos:** ${nutrition.total_carbo} g  
-🥑 **Gorduras:** ${nutrition.total_gordura} g
-🔥 **Estimativa calórica:** ${nutrition.total_kcal} kcal
-
-✅ Obrigada! Seus dados estão salvos.`;
+✅ Obrigado! Seus dados estão salvos.`;
 }
 
 async function saveFoodAnalysis(supabase: any, user_id: string, foods: DetectedFood[], nutrition: NutritionCalculation) {

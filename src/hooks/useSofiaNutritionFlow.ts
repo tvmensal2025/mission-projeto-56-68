@@ -1,6 +1,7 @@
 import { useCallback, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
+import { nutritionFlowController } from '@/utils/nutritionFlowController';
 
 interface NutritionContext {
   finalized: boolean;
@@ -25,14 +26,15 @@ interface SofiaNutritionFlowProps {
 export const useSofiaNutritionFlow = ({ userId, userName, onSofiaResponse }: SofiaNutritionFlowProps) => {
   const nutritionContextRef = useRef<NutritionContext>({ 
     finalized: false, 
-    request_id: `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+    request_id: nutritionFlowController.generateRequestId()
   });
 
   const resetContext = useCallback(() => {
     nutritionContextRef.current = { 
       finalized: false, 
-      request_id: `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+      request_id: nutritionFlowController.generateRequestId()
     };
+    nutritionFlowController.cleanup();
   }, []);
 
   const processDeterministicNutrition = useCallback(async (
@@ -41,10 +43,13 @@ export const useSofiaNutritionFlow = ({ userId, userName, onSofiaResponse }: Sof
     const context = nutritionContextRef.current;
 
     // Gate: se já finalizou, não processar novamente
-    if (context.finalized) {
-      console.log(`🚫 Nutrition already finalized for request ${context.request_id} - skipping deterministic calculation`);
+    if (context.finalized || nutritionFlowController.isRequestActive(context.request_id)) {
+      console.log(`🚫 Nutrition already finalized or active for request ${context.request_id} - skipping deterministic calculation`);
       return { success: false };
     }
+
+    // Mark request as active to prevent duplicates
+    nutritionFlowController.markRequestActive(context.request_id);
 
     try {
       console.log(`🔥 Starting deterministic nutrition calculation for request ${context.request_id}`);
@@ -68,6 +73,7 @@ export const useSofiaNutritionFlow = ({ userId, userName, onSofiaResponse }: Sof
         context.finalized = true;
         context.analysis_type = 'nutritional_sum';
         context.deterministic_result = data;
+        nutritionFlowController.markRequestFinalized(context.request_id);
 
         console.log(`✅ Deterministic calculation completed and finalized for request ${context.request_id}`);
         
